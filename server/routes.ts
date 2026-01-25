@@ -17,14 +17,49 @@ export async function registerRoutes(
   await setupAuth(app);
   registerAuthRoutes(app);
 
-  // Helper middleware to check if user is admin
+  // Helper middleware to check if user is admin (via Replit Auth)
   const requireAdmin = async (req: any, res: any, next: any) => {
+    if (!req.user?.claims?.sub) {
+      return res.status(401).json({ message: "Admin authentication required" });
+    }
     const userId = req.user.claims.sub;
     const profile = await storage.getUserProfile(userId);
     if (profile?.role !== "admin") {
       return res.status(403).json({ message: "Admin access required" });
     }
     next();
+  };
+
+  // Combined auth middleware: allows either Replit Auth (admin) or factory session
+  const isAuthenticatedOrFactory = async (req: any, res: any, next: any) => {
+    const session = req.session as any;
+    
+    // Check factory session first
+    if (session?.isFactoryUser && session?.factoryId) {
+      req.isFactorySession = true;
+      req.factoryId = session.factoryId;
+      req.factoryName = session.factoryName;
+      return next();
+    }
+    
+    // Fall back to Replit Auth
+    if (req.user?.claims?.sub) {
+      req.isFactorySession = false;
+      return next();
+    }
+    
+    return res.status(401).json({ message: "Authentication required" });
+  };
+
+  // Factory-only middleware (for factory session users)
+  const requireFactorySession = (req: any, res: any, next: any) => {
+    const session = req.session as any;
+    if (session?.isFactoryUser && session?.factoryId) {
+      req.factoryId = session.factoryId;
+      req.factoryName = session.factoryName;
+      return next();
+    }
+    return res.status(401).json({ message: "Factory authentication required" });
   };
 
   // Factory login endpoint (username/password authentication)
@@ -134,16 +169,25 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/dashboard/factory", isAuthenticated, async (req: any, res) => {
+  app.get("/api/dashboard/factory", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const profile = await storage.getUserProfile(userId);
+      let factoryId: string | null = null;
       
-      if (!profile?.factoryId) {
+      // Factory session login (username/password)
+      if (req.isFactorySession) {
+        factoryId = req.factoryId;
+      } else {
+        // Replit Auth login - check user profile
+        const userId = req.user.claims.sub;
+        const profile = await storage.getUserProfile(userId);
+        factoryId = profile?.factoryId || null;
+      }
+      
+      if (!factoryId) {
         return res.status(400).json({ message: "No factory assigned" });
       }
       
-      const stats = await storage.getFactoryDashboardStats(profile.factoryId);
+      const stats = await storage.getFactoryDashboardStats(factoryId);
       res.json(stats);
     } catch (error) {
       console.error("Error fetching factory dashboard:", error);
@@ -152,20 +196,26 @@ export async function registerRoutes(
   });
 
   // Factory routes - admin only for listing all, factory users can only see their assigned factory
-  app.get("/api/factories", isAuthenticated, async (req: any, res) => {
+  app.get("/api/factories", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const profile = await storage.getUserProfile(userId);
-      
-      if (profile?.role === "admin") {
-        const factories = await storage.getFactories();
-        res.json(factories);
-      } else if (profile?.factoryId) {
-        // Factory users can only see their own factory
-        const factory = await storage.getFactory(profile.factoryId);
+      if (req.isFactorySession) {
+        // Factory session login - only see their own factory
+        const factory = await storage.getFactory(req.factoryId);
         res.json(factory ? [factory] : []);
       } else {
-        res.json([]);
+        // Replit Auth login
+        const userId = req.user.claims.sub;
+        const profile = await storage.getUserProfile(userId);
+        
+        if (profile?.role === "admin") {
+          const factories = await storage.getFactories();
+          res.json(factories);
+        } else if (profile?.factoryId) {
+          const factory = await storage.getFactory(profile.factoryId);
+          res.json(factory ? [factory] : []);
+        } else {
+          res.json([]);
+        }
       }
     } catch (error) {
       console.error("Error fetching factories:", error);
@@ -173,12 +223,18 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/factories/:id", isAuthenticated, async (req: any, res) => {
+  app.get("/api/factories/:id", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
       const factory = await storage.getFactory(req.params.id as string);
       if (!factory) {
         return res.status(404).json({ message: "Factory not found" });
       }
+      
+      // Factory session users can only see their own factory
+      if (req.isFactorySession && factory.id !== req.factoryId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
       res.json(factory);
     } catch (error) {
       console.error("Error fetching factory:", error);
@@ -255,15 +311,22 @@ export async function registerRoutes(
   });
 
   // Garment routes
-  app.get("/api/garments", isAuthenticated, async (req: any, res) => {
+  app.get("/api/garments", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const profile = await storage.getUserProfile(userId);
+      let factoryId: string | undefined;
       
-      // Factory users can only see their own garments
-      const factoryId = profile?.role === "factory" ? profile.factoryId : (req.query.factory as string | undefined);
+      if (req.isFactorySession) {
+        // Factory session login - only see their own garments
+        factoryId = req.factoryId;
+      } else {
+        // Replit Auth login
+        const userId = req.user.claims.sub;
+        const profile = await storage.getUserProfile(userId);
+        // Factory users can only see their own garments, admins can filter by factory
+        factoryId = profile?.role === "factory" ? profile.factoryId || undefined : (req.query.factory as string | undefined);
+      }
       
-      const garments = await storage.getGarments(factoryId || undefined);
+      const garments = await storage.getGarments(factoryId);
       res.json(garments);
     } catch (error) {
       console.error("Error fetching garments:", error);
@@ -325,10 +388,9 @@ export async function registerRoutes(
   });
 
   // Scan routes
-  app.post("/api/scan", isAuthenticated, async (req: any, res) => {
+  app.post("/api/scan", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const { garmentId, location, direction, factoryId } = req.body;
+      const { garmentId, location, direction } = req.body;
 
       if (!garmentId || !location || !direction) {
         return res.status(400).json({ message: "Missing required fields" });
@@ -340,9 +402,24 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Unknown garment: " + garmentId });
       }
 
+      let userId: string;
+      let userFactoryId: string | null = null;
+      
+      if (req.isFactorySession) {
+        // Factory session login
+        userId = `factory:${req.factoryId}`;
+        userFactoryId = req.factoryId;
+      } else {
+        // Replit Auth login
+        userId = req.user.claims.sub;
+        const profile = await storage.getUserProfile(userId);
+        if (profile?.role === "factory") {
+          userFactoryId = profile.factoryId;
+        }
+      }
+
       // Validate factory access for factory users
-      const profile = await storage.getUserProfile(userId);
-      if (profile?.role === "factory" && garment.factoryId !== profile.factoryId) {
+      if (userFactoryId && garment.factoryId !== userFactoryId) {
         return res.status(403).json({ message: "This garment belongs to another factory" });
       }
 
@@ -373,13 +450,21 @@ export async function registerRoutes(
   });
 
   // Batch routes
-  app.get("/api/batches", isAuthenticated, async (req: any, res) => {
+  app.get("/api/batches", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const profile = await storage.getUserProfile(userId);
+      let factoryId: string | undefined;
       
-      const factoryId = profile?.role === "factory" ? profile.factoryId : undefined;
-      const batches = await storage.getBatches(factoryId || undefined);
+      if (req.isFactorySession) {
+        // Factory session login - only see their own batches
+        factoryId = req.factoryId;
+      } else {
+        // Replit Auth login
+        const userId = req.user.claims.sub;
+        const profile = await storage.getUserProfile(userId);
+        factoryId = profile?.role === "factory" ? profile.factoryId || undefined : undefined;
+      }
+      
+      const batches = await storage.getBatches(factoryId);
       res.json(batches);
     } catch (error) {
       console.error("Error fetching batches:", error);
@@ -387,13 +472,33 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/batches", isAuthenticated, async (req: any, res) => {
+  app.post("/api/batches", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
       const { location, direction, factoryId, garmentIds, generateReport } = req.body;
 
       if (!location || !direction || !factoryId || !garmentIds?.length) {
         return res.status(400).json({ message: "Missing required fields" });
+      }
+
+      let userId: string;
+      let userFactoryId: string | null = null;
+      
+      if (req.isFactorySession) {
+        // Factory session login
+        userId = `factory:${req.factoryId}`;
+        userFactoryId = req.factoryId;
+      } else {
+        // Replit Auth login
+        userId = req.user.claims.sub;
+        const profile = await storage.getUserProfile(userId);
+        if (profile?.role === "factory") {
+          userFactoryId = profile.factoryId;
+        }
+      }
+
+      // Validate factory access for factory users
+      if (userFactoryId && factoryId !== userFactoryId) {
+        return res.status(403).json({ message: "Cannot create batch for another factory" });
       }
 
       // Generate batch number
@@ -445,11 +550,16 @@ export async function registerRoutes(
   });
 
   // PDF Report routes
-  app.get("/api/batches/:id/report", isAuthenticated, async (req: any, res) => {
+  app.get("/api/batches/:id/report", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
       const batch = await storage.getBatch(req.params.id as string);
       if (!batch) {
         return res.status(404).json({ message: "Batch not found" });
+      }
+      
+      // Validate factory access for factory users
+      if (req.isFactorySession && batch.factoryId !== req.factoryId) {
+        return res.status(403).json({ message: "Access denied to this batch" });
       }
 
       const factory = await storage.getFactory(batch.factoryId);
