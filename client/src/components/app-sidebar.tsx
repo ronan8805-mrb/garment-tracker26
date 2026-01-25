@@ -21,7 +21,7 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import type { UserProfile } from "@shared/schema";
@@ -29,13 +29,14 @@ import type { UserProfile } from "@shared/schema";
 interface AppSidebarProps {
   userProfile: UserProfile | null;
   isFactorySession?: boolean;
+  isAdminSession?: boolean;
 }
 
-export function AppSidebar({ userProfile, isFactorySession }: AppSidebarProps) {
+export function AppSidebar({ userProfile, isFactorySession, isAdminSession }: AppSidebarProps) {
   const [location] = useLocation();
-  const { user, logout, factorySession } = useAuth();
+  const { logout, factorySession } = useAuth();
 
-  const isAdmin = userProfile?.role === "admin" && !isFactorySession;
+  const isAdmin = isAdminSession ?? false;
 
   const adminItems = [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -54,20 +55,23 @@ export function AppSidebar({ userProfile, isFactorySession }: AppSidebarProps) {
   const items = isAdmin ? adminItems : factoryItems;
 
   const getInitials = () => {
+    if (isAdmin) {
+      return "AD";
+    }
     if (isFactorySession && factorySession?.factoryName) {
       return factorySession.factoryName.substring(0, 2).toUpperCase();
     }
-    if (user?.firstName && user?.lastName) {
-      return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
-    }
-    return user?.email?.[0]?.toUpperCase() || "U";
+    return "U";
   };
 
   const getDisplayName = () => {
+    if (isAdmin) {
+      return "Admin";
+    }
     if (isFactorySession && factorySession?.factoryName) {
       return factorySession.factoryName;
     }
-    return user?.firstName ? `${user.firstName} ${user.lastName || ""}` : user?.email;
+    return "User";
   };
 
   return (
@@ -113,7 +117,6 @@ export function AppSidebar({ userProfile, isFactorySession }: AppSidebarProps) {
       <SidebarFooter className="p-4 border-t border-sidebar-border">
         <div className="flex items-center gap-3">
           <Avatar className="w-9 h-9">
-            <AvatarImage src={user?.profileImageUrl || undefined} />
             <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground text-sm">
               {getInitials()}
             </AvatarFallback>

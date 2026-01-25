@@ -30,13 +30,21 @@ export async function registerRoutes(
     next();
   };
 
-  // Combined auth middleware: allows either Replit Auth (admin) or factory session
+  // Combined auth middleware: allows admin session, factory session, or Replit Auth
   const isAuthenticatedOrFactory = async (req: any, res: any, next: any) => {
     const session = req.session as any;
     
-    // Check factory session first
+    // Check admin session first
+    if (session?.isAdmin) {
+      req.isFactorySession = false;
+      req.isAdminSession = true;
+      return next();
+    }
+    
+    // Check factory session
     if (session?.isFactoryUser && session?.factoryId) {
       req.isFactorySession = true;
+      req.isAdminSession = false;
       req.factoryId = session.factoryId;
       req.factoryName = session.factoryName;
       return next();
@@ -45,6 +53,7 @@ export async function registerRoutes(
     // Fall back to Replit Auth
     if (req.user?.claims?.sub) {
       req.isFactorySession = false;
+      req.isAdminSession = false;
       return next();
     }
     
@@ -62,11 +71,30 @@ export async function registerRoutes(
     return res.status(401).json({ message: "Factory authentication required" });
   };
 
-  // Factory login endpoint (username/password authentication)
+  // Admin credentials (hardcoded for now)
+  const ADMIN_USERNAME = "sonny1994";
+  const ADMIN_PASSWORD = "sonny1994";
+
+  // Login endpoint (username/password authentication for both admin and factory)
   app.post("/api/factory/login", async (req, res) => {
     try {
       const validatedData = factoryLoginSchema.parse(req.body);
       
+      // Check for admin login first
+      if (validatedData.username === ADMIN_USERNAME && validatedData.password === ADMIN_PASSWORD) {
+        // Store admin session
+        (req.session as any).isAdmin = true;
+        (req.session as any).isFactoryUser = false;
+        (req.session as any).factoryId = null;
+        (req.session as any).factoryName = null;
+        
+        return res.json({
+          success: true,
+          isAdmin: true,
+        });
+      }
+      
+      // Check for factory login
       const factory = await storage.getFactoryByUsername(validatedData.username);
       if (!factory || !factory.passwordHash) {
         return res.status(401).json({ message: "Invalid username or password" });
@@ -85,6 +113,7 @@ export async function registerRoutes(
       (req.session as any).factoryId = factory.id;
       (req.session as any).factoryName = factory.name;
       (req.session as any).isFactoryUser = true;
+      (req.session as any).isAdmin = false;
       
       res.json({
         success: true,
@@ -103,26 +132,38 @@ export async function registerRoutes(
     }
   });
 
-  // Factory logout endpoint
+  // Session logout endpoint (for both admin and factory)
   app.post("/api/factory/logout", (req, res) => {
     (req.session as any).factoryId = undefined;
     (req.session as any).factoryName = undefined;
     (req.session as any).isFactoryUser = false;
+    (req.session as any).isAdmin = false;
     res.json({ success: true });
   });
 
-  // Get current factory session
+  // Get current session (admin or factory)
   app.get("/api/factory/session", (req, res) => {
     const session = req.session as any;
-    if (session?.isFactoryUser && session?.factoryId) {
-      res.json({
+    
+    // Check for admin session
+    if (session?.isAdmin) {
+      return res.json({
         isLoggedIn: true,
+        isAdmin: true,
+      });
+    }
+    
+    // Check for factory session
+    if (session?.isFactoryUser && session?.factoryId) {
+      return res.json({
+        isLoggedIn: true,
+        isAdmin: false,
         factoryId: session.factoryId,
         factoryName: session.factoryName,
       });
-    } else {
-      res.json({ isLoggedIn: false });
     }
+    
+    res.json({ isLoggedIn: false });
   });
 
   // User profile routes

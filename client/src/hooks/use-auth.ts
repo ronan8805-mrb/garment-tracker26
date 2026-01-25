@@ -1,29 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { User } from "@shared/models/auth";
 
-interface FactorySession {
+interface SessionInfo {
   isLoggedIn: boolean;
+  isAdmin?: boolean;
   factoryId?: string;
   factoryName?: string;
 }
 
-async function fetchUser(): Promise<User | null> {
-  const response = await fetch("/api/auth/user", {
-    credentials: "include",
-  });
-
-  if (response.status === 401) {
-    return null;
-  }
-
-  if (!response.ok) {
-    throw new Error(`${response.status}: ${response.statusText}`);
-  }
-
-  return response.json();
-}
-
-async function fetchFactorySession(): Promise<FactorySession> {
+async function fetchSession(): Promise<SessionInfo> {
   const response = await fetch("/api/factory/session", {
     credentials: "include",
   });
@@ -35,11 +19,7 @@ async function fetchFactorySession(): Promise<FactorySession> {
   return response.json();
 }
 
-async function logout(): Promise<void> {
-  window.location.href = "/api/logout";
-}
-
-async function factoryLogout(): Promise<void> {
+async function sessionLogout(): Promise<void> {
   await fetch("/api/factory/logout", {
     method: "POST",
     credentials: "include",
@@ -49,46 +29,33 @@ async function factoryLogout(): Promise<void> {
 
 export function useAuth() {
   const queryClient = useQueryClient();
-  
-  const { data: user, isLoading: isUserLoading } = useQuery<User | null>({
-    queryKey: ["/api/auth/user"],
-    queryFn: fetchUser,
-    retry: false,
-    staleTime: 1000 * 60 * 5,
-  });
 
-  const { data: factorySession, isLoading: isFactoryLoading } = useQuery<FactorySession>({
+  const { data: session, isLoading } = useQuery<SessionInfo>({
     queryKey: ["/api/factory/session"],
-    queryFn: fetchFactorySession,
+    queryFn: fetchSession,
     retry: false,
     staleTime: 1000 * 60 * 5,
   });
 
   const logoutMutation = useMutation({
-    mutationFn: logout,
-    onSuccess: () => {
-      queryClient.setQueryData(["/api/auth/user"], null);
-    },
-  });
-
-  const factoryLogoutMutation = useMutation({
-    mutationFn: factoryLogout,
+    mutationFn: sessionLogout,
     onSuccess: () => {
       queryClient.setQueryData(["/api/factory/session"], { isLoggedIn: false });
     },
   });
 
-  const isLoading = isUserLoading || isFactoryLoading;
-  const isAuthenticated = !!user || (factorySession?.isLoggedIn ?? false);
-  const isFactorySession = factorySession?.isLoggedIn ?? false;
+  const isAuthenticated = session?.isLoggedIn ?? false;
+  const isFactorySession = !!(session?.isLoggedIn && !session?.isAdmin);
+  const isAdminSession = !!(session?.isLoggedIn && session?.isAdmin);
 
   return {
-    user,
+    user: null,
     isLoading,
     isAuthenticated,
     isFactorySession,
-    factorySession,
-    logout: isFactorySession ? factoryLogoutMutation.mutate : logoutMutation.mutate,
-    isLoggingOut: logoutMutation.isPending || factoryLogoutMutation.isPending,
+    isAdminSession,
+    factorySession: session,
+    logout: logoutMutation.mutate,
+    isLoggingOut: logoutMutation.isPending,
   };
 }

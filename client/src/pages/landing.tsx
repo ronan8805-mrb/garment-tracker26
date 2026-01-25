@@ -14,12 +14,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Sparkles, ScanLine, FileText, Shield, Zap, Building2, Stethoscope, Scissors, BadgeCheck, Lock, User } from "lucide-react";
@@ -147,89 +141,64 @@ export default function LandingPage() {
                     <CardTitle className="text-xl">Sign In to LaundryTrack</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <Tabs defaultValue="factory" className="w-full">
-                      <TabsList className="grid w-full grid-cols-2">
-                        <TabsTrigger value="factory" data-testid="tab-factory-login">
-                          <Building2 className="w-4 h-4 mr-2" />
-                          Factory
-                        </TabsTrigger>
-                        <TabsTrigger value="admin" data-testid="tab-admin-login">
-                          <Lock className="w-4 h-4 mr-2" />
-                          Admin
-                        </TabsTrigger>
-                      </TabsList>
-                      <TabsContent value="factory" className="mt-4">
-                        <Form {...form}>
-                          <form onSubmit={form.handleSubmit(handleFactoryLogin)} className="space-y-4">
-                            <FormField
-                              control={form.control}
-                              name="username"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>Username</FormLabel>
-                                  <FormControl>
-                                    <div className="relative">
-                                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                      <Input
-                                        placeholder="Enter your username"
-                                        className="pl-9"
-                                        {...field}
-                                        data-testid="input-factory-username"
-                                      />
-                                    </div>
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={form.control}
-                              name="password"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>Password</FormLabel>
-                                  <FormControl>
-                                    <div className="relative">
-                                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                      <Input
-                                        type="password"
-                                        placeholder="Enter your password"
-                                        className="pl-9"
-                                        {...field}
-                                        data-testid="input-factory-password"
-                                      />
-                                    </div>
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <Button
-                              type="submit"
-                              className="w-full"
-                              disabled={isLoggingIn}
-                              data-testid="button-factory-login"
-                            >
-                              {isLoggingIn ? "Signing in..." : "Sign In as Factory"}
-                            </Button>
-                          </form>
-                        </Form>
-                        <p className="text-xs text-muted-foreground text-center mt-4">
-                          Use the credentials provided by your laundry administrator
-                        </p>
-                      </TabsContent>
-                      <TabsContent value="admin" className="mt-4 space-y-4">
-                        <p className="text-sm text-muted-foreground text-center">
-                          Admin access is for Mr Bubbles Express staff only
-                        </p>
-                        <Button asChild className="w-full" data-testid="button-admin-login">
-                          <a href="/api/login">
-                            <Sparkles className="w-4 h-4 mr-2" />
-                            Sign In with Replit
-                          </a>
+                    <Form {...form}>
+                      <form onSubmit={form.handleSubmit(handleFactoryLogin)} className="space-y-4">
+                        <FormField
+                          control={form.control}
+                          name="username"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Username</FormLabel>
+                              <FormControl>
+                                <div className="relative">
+                                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                  <Input
+                                    placeholder="Enter your username"
+                                    className="pl-9"
+                                    {...field}
+                                    data-testid="input-username"
+                                  />
+                                </div>
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="password"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Password</FormLabel>
+                              <FormControl>
+                                <div className="relative">
+                                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                  <Input
+                                    type="password"
+                                    placeholder="Enter your password"
+                                    className="pl-9"
+                                    {...field}
+                                    data-testid="input-password"
+                                  />
+                                </div>
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <Button
+                          type="submit"
+                          className="w-full"
+                          disabled={isLoggingIn}
+                          data-testid="button-login"
+                        >
+                          {isLoggingIn ? "Signing in..." : "Sign In"}
                         </Button>
-                      </TabsContent>
-                    </Tabs>
+                      </form>
+                    </Form>
+                    <p className="text-xs text-muted-foreground text-center mt-4">
+                      Use the credentials provided by your administrator
+                    </p>
                   </CardContent>
                 </Card>
                 <div className="absolute -top-4 -right-4 w-24 h-24 bg-primary/10 rounded-full blur-2xl -z-10" />

@@ -20,36 +20,20 @@ import ScanPage from "@/pages/scan";
 import ReportsPage from "@/pages/reports";
 import type { UserProfile } from "@shared/schema";
 
-function AuthenticatedLayout({ children, isFactorySession }: { children: React.ReactNode; isFactorySession?: boolean }) {
-  const { data: userProfile, isLoading: isProfileLoading } = useQuery<UserProfile>({
-    queryKey: ["/api/user/profile"],
-    enabled: !isFactorySession,
-  });
-
+function AuthenticatedLayout({ children, isFactorySession, isAdminSession }: { children: React.ReactNode; isFactorySession?: boolean; isAdminSession?: boolean }) {
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3rem",
   };
 
-  if (!isFactorySession && isProfileLoading) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center">
-        <div className="text-center space-y-4">
-          <Skeleton className="h-12 w-12 rounded-full mx-auto" />
-          <Skeleton className="h-4 w-32" />
-        </div>
-      </div>
-    );
-  }
-
-  const effectiveProfile = isFactorySession 
-    ? { role: "factory" as const, factoryId: null, id: "", userId: "", createdAt: new Date() }
-    : userProfile;
+  const userProfile = isAdminSession 
+    ? { role: "admin" as const, factoryId: null, id: "", userId: "", createdAt: new Date() }
+    : { role: "factory" as const, factoryId: null, id: "", userId: "", createdAt: new Date() };
 
   return (
     <SidebarProvider style={style as React.CSSProperties}>
       <div className="flex h-screen w-full">
-        <AppSidebar userProfile={effectiveProfile || null} isFactorySession={isFactorySession} />
+        <AppSidebar userProfile={userProfile} isFactorySession={isFactorySession} isAdminSession={isAdminSession} />
         <SidebarInset className="flex flex-col flex-1">
           <header className="flex items-center justify-between h-14 px-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-40">
             <SidebarTrigger data-testid="button-sidebar-toggle" />
@@ -64,20 +48,15 @@ function AuthenticatedLayout({ children, isFactorySession }: { children: React.R
   );
 }
 
-function AuthenticatedRouter({ isFactorySession }: { isFactorySession?: boolean }) {
-  const { data: userProfile } = useQuery<UserProfile>({
-    queryKey: ["/api/user/profile"],
-    enabled: !isFactorySession,
-  });
+function AuthenticatedRouter({ isFactorySession, isAdminSession }: { isFactorySession?: boolean; isAdminSession?: boolean }) {
+  const isAdmin = isAdminSession ?? false;
 
-  const isAdmin = userProfile?.role === "admin" && !isFactorySession;
-
-  const effectiveProfile = isFactorySession 
-    ? { role: "factory" as const, factoryId: null, id: "", userId: "", createdAt: new Date() }
-    : userProfile;
+  const effectiveProfile = isAdmin 
+    ? { role: "admin" as const, factoryId: null, id: "", userId: "", createdAt: new Date() }
+    : { role: "factory" as const, factoryId: null, id: "", userId: "", createdAt: new Date() };
 
   return (
-    <AuthenticatedLayout isFactorySession={isFactorySession}>
+    <AuthenticatedLayout isFactorySession={isFactorySession} isAdminSession={isAdminSession}>
       <Switch>
         <Route path="/">
           {isAdmin ? <AdminDashboard /> : <FactoryDashboard />}
@@ -87,7 +66,7 @@ function AuthenticatedRouter({ isFactorySession }: { isFactorySession?: boolean 
         )}
         <Route path="/garments" component={GarmentsPage} />
         <Route path="/scan">
-          <ScanPage userProfile={effectiveProfile || null} />
+          <ScanPage userProfile={effectiveProfile} />
         </Route>
         {isAdmin && (
           <Route path="/reports" component={ReportsPage} />
@@ -99,7 +78,7 @@ function AuthenticatedRouter({ isFactorySession }: { isFactorySession?: boolean 
 }
 
 function Router() {
-  const { user, isLoading, isAuthenticated, isFactorySession } = useAuth();
+  const { isLoading, isAuthenticated, isFactorySession, isAdminSession } = useAuth();
 
   if (isLoading) {
     return (
@@ -120,7 +99,7 @@ function Router() {
     return <LandingPage />;
   }
 
-  return <AuthenticatedRouter isFactorySession={isFactorySession} />;
+  return <AuthenticatedRouter isFactorySession={isFactorySession} isAdminSession={isAdminSession} />;
 }
 
 function App() {
