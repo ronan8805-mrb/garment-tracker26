@@ -38,6 +38,7 @@ import {
   Trash2,
   Building2,
   Factory,
+  Bluetooth,
 } from "lucide-react";
 import type { Factory as FactoryType, Garment, UserProfile } from "@shared/schema";
 
@@ -310,9 +311,15 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
                     <ScanLine className="w-6 h-6 text-primary" />
                   </div>
                   <div>
-                    <CardTitle className="text-lg">Scan Input</CardTitle>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      Scan Input
+                      <Badge variant="outline" className="flex items-center gap-1 text-xs font-normal">
+                        <Bluetooth className="w-3 h-3" />
+                        Scanner Ready
+                      </Badge>
+                    </CardTitle>
                     <CardDescription>
-                      Scan barcodes or type garment IDs
+                      Netum CS7501 Bluetooth scanner supported
                     </CardDescription>
                   </div>
                 </div>
@@ -334,7 +341,7 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
                 data-testid="input-scan"
               />
               <p className="text-sm text-muted-foreground mt-2">
-                Press Enter to confirm scan. Scanner input is automatically detected.
+                Pair your Bluetooth scanner, scan barcode, and it auto-submits. Manual entry: type ID + Enter.
               </p>
             </CardContent>
           </Card>
