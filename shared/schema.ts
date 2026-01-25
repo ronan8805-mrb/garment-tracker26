@@ -27,6 +27,8 @@ export const factories = pgTable("factories", {
   name: text("name").notNull(),
   code: varchar("code", { length: 10 }).notNull().unique(),
   location: text("location"),
+  username: varchar("username", { length: 50 }).unique(),
+  passwordHash: text("password_hash"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -110,8 +112,24 @@ export const userProfilesRelations = relations(userProfiles, ({ one }) => ({
 // Insert schemas
 export const insertFactorySchema = createInsertSchema(factories).omit({
   id: true,
+  passwordHash: true,
   createdAt: true,
   updatedAt: true,
+});
+
+// Factory login schema
+export const factoryLoginSchema = z.object({
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+});
+
+// Factory creation with password schema
+export const createFactoryWithCredentialsSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  code: z.string().min(1, "Code is required").max(10, "Code must be 10 characters or less"),
+  location: z.string().optional(),
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
 export const insertGarmentSchema = createInsertSchema(garments).omit({
@@ -162,3 +180,6 @@ export type UserProfile = typeof userProfiles.$inferSelect;
 export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
 
 export type BulkGarmentInput = z.infer<typeof bulkGarmentSchema>;
+
+export type FactoryLoginInput = z.infer<typeof factoryLoginSchema>;
+export type CreateFactoryWithCredentials = z.infer<typeof createFactoryWithCredentialsSchema>;
