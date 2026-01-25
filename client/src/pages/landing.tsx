@@ -21,7 +21,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Sparkles, ScanLine, FileText, Shield, Zap, Building2, Stethoscope, Scissors, BadgeCheck, Lock, User } from "lucide-react";
 
 const factoryLoginSchema = z.object({
@@ -50,7 +50,8 @@ export default function LandingPage() {
         title: "Login successful",
         description: "Redirecting to dashboard...",
       });
-      setLocation("/factory");
+      await queryClient.invalidateQueries({ queryKey: ["/api/factory/session"] });
+      setLocation("/");
     } catch (error: any) {
       toast({
         title: "Login failed",

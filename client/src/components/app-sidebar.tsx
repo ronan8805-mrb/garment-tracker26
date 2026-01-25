@@ -28,13 +28,14 @@ import type { UserProfile } from "@shared/schema";
 
 interface AppSidebarProps {
   userProfile: UserProfile | null;
+  isFactorySession?: boolean;
 }
 
-export function AppSidebar({ userProfile }: AppSidebarProps) {
+export function AppSidebar({ userProfile, isFactorySession }: AppSidebarProps) {
   const [location] = useLocation();
-  const { user, logout } = useAuth();
+  const { user, logout, factorySession } = useAuth();
 
-  const isAdmin = userProfile?.role === "admin";
+  const isAdmin = userProfile?.role === "admin" && !isFactorySession;
 
   const adminItems = [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -53,10 +54,20 @@ export function AppSidebar({ userProfile }: AppSidebarProps) {
   const items = isAdmin ? adminItems : factoryItems;
 
   const getInitials = () => {
+    if (isFactorySession && factorySession?.factoryName) {
+      return factorySession.factoryName.substring(0, 2).toUpperCase();
+    }
     if (user?.firstName && user?.lastName) {
       return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
     }
     return user?.email?.[0]?.toUpperCase() || "U";
+  };
+
+  const getDisplayName = () => {
+    if (isFactorySession && factorySession?.factoryName) {
+      return factorySession.factoryName;
+    }
+    return user?.firstName ? `${user.firstName} ${user.lastName || ""}` : user?.email;
   };
 
   return (
@@ -109,7 +120,7 @@ export function AppSidebar({ userProfile }: AppSidebarProps) {
           </Avatar>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-sidebar-foreground truncate">
-              {user?.firstName ? `${user.firstName} ${user.lastName || ""}` : user?.email}
+              {getDisplayName()}
             </p>
             <p className="text-xs text-sidebar-foreground/60 truncate">
               {isAdmin ? "Administrator" : "Factory User"}
