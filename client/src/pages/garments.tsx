@@ -41,6 +41,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import {
   Shirt,
@@ -86,6 +87,7 @@ export default function GarmentsPage() {
   const [filterFactory, setFilterFactory] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const { toast } = useToast();
+  const { isAdminSession } = useAuth();
 
   const { data: factories } = useQuery<FactoryType[]>({
     queryKey: ["/api/factories"],
@@ -133,29 +135,31 @@ export default function GarmentsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Garments</h1>
-          <p className="text-muted-foreground">Manage garments and generate barcodes</p>
+          <p className="text-muted-foreground">{isAdminSession ? "Manage garments and generate barcodes" : "View your factory's garments"}</p>
         </div>
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-add-garments">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Garments
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Create Garments & Generate Barcodes</DialogTitle>
-              <DialogDescription>
-                Add garment types with sizes and quantities. Barcodes will be generated automatically.
-              </DialogDescription>
-            </DialogHeader>
-            <BulkGarmentForm
-              factories={factories || []}
-              onSubmit={(data) => createMutation.mutate(data)}
-              isLoading={createMutation.isPending}
-            />
-          </DialogContent>
-        </Dialog>
+        {isAdminSession && (
+          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-add-garments">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Garments
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Create Garments & Generate Barcodes</DialogTitle>
+                <DialogDescription>
+                  Add garment types with sizes and quantities. Barcodes will be generated automatically.
+                </DialogDescription>
+              </DialogHeader>
+              <BulkGarmentForm
+                factories={factories || []}
+                onSubmit={(data) => createMutation.mutate(data)}
+                isLoading={createMutation.isPending}
+              />
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       <Card>
