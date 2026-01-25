@@ -265,9 +265,11 @@ export default function GarmentsPage() {
               <p className="text-muted-foreground mb-4">
                 {searchQuery || filterFactory !== "all" || filterStatus !== "all"
                   ? "Try adjusting your filters"
-                  : "Get started by adding garments to a factory"}
+                  : isAdminSession 
+                    ? "Get started by adding garments to a factory"
+                    : "No garments have been assigned to your factory yet"}
               </p>
-              {!searchQuery && filterFactory === "all" && filterStatus === "all" && (
+              {isAdminSession && !searchQuery && filterFactory === "all" && filterStatus === "all" && (
                 <Button onClick={() => setIsCreateOpen(true)}>
                   <Plus className="w-4 h-4 mr-2" />
                   Add Garments
