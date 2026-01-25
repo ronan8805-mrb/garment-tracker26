@@ -1,28 +1,127 @@
 import { Switch, Route } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "@/components/theme-provider";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/sidebar";
+import { AppSidebar } from "@/components/app-sidebar";
+import { useAuth } from "@/hooks/use-auth";
+import { Skeleton } from "@/components/ui/skeleton";
 import NotFound from "@/pages/not-found";
+import LandingPage from "@/pages/landing";
+import AdminDashboard from "@/pages/admin-dashboard";
+import FactoryDashboard from "@/pages/factory-dashboard";
+import FactoriesPage from "@/pages/factories";
+import GarmentsPage from "@/pages/garments";
+import ScanPage from "@/pages/scan";
+import ReportsPage from "@/pages/reports";
+import type { UserProfile } from "@shared/schema";
+
+function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
+  const { data: userProfile, isLoading: isProfileLoading } = useQuery<UserProfile>({
+    queryKey: ["/api/user/profile"],
+  });
+
+  const style = {
+    "--sidebar-width": "16rem",
+    "--sidebar-width-icon": "3rem",
+  };
+
+  if (isProfileLoading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center">
+        <div className="text-center space-y-4">
+          <Skeleton className="h-12 w-12 rounded-full mx-auto" />
+          <Skeleton className="h-4 w-32" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <SidebarProvider style={style as React.CSSProperties}>
+      <div className="flex h-screen w-full">
+        <AppSidebar userProfile={userProfile || null} />
+        <SidebarInset className="flex flex-col flex-1">
+          <header className="flex items-center justify-between h-14 px-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-40">
+            <SidebarTrigger data-testid="button-sidebar-toggle" />
+            <ThemeToggle />
+          </header>
+          <main className="flex-1 overflow-auto p-6">
+            {children}
+          </main>
+        </SidebarInset>
+      </div>
+    </SidebarProvider>
+  );
+}
+
+function AuthenticatedRouter() {
+  const { data: userProfile } = useQuery<UserProfile>({
+    queryKey: ["/api/user/profile"],
+  });
+
+  const isAdmin = userProfile?.role === "admin";
+
+  return (
+    <AuthenticatedLayout>
+      <Switch>
+        <Route path="/">
+          {isAdmin ? <AdminDashboard /> : <FactoryDashboard />}
+        </Route>
+        {isAdmin && (
+          <Route path="/factories" component={FactoriesPage} />
+        )}
+        <Route path="/garments" component={GarmentsPage} />
+        <Route path="/scan">
+          <ScanPage userProfile={userProfile || null} />
+        </Route>
+        {isAdmin && (
+          <Route path="/reports" component={ReportsPage} />
+        )}
+        <Route component={NotFound} />
+      </Switch>
+    </AuthenticatedLayout>
+  );
+}
 
 function Router() {
-  return (
-    <Switch>
-      {/* Add pages below */}
-      {/* <Route path="/" component={Home}/> */}
-      {/* Fallback to 404 */}
-      <Route component={NotFound} />
-    </Switch>
-  );
+  const { user, isLoading, isAuthenticated } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <div className="text-center space-y-4">
+          <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mx-auto animate-pulse">
+            <svg className="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+            </svg>
+          </div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LandingPage />;
+  }
+
+  return <AuthenticatedRouter />;
 }
 
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Router />
-      </TooltipProvider>
+      <ThemeProvider defaultTheme="light" storageKey="laundry-theme">
+        <TooltipProvider>
+          <Toaster />
+          <Router />
+        </TooltipProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }
