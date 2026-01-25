@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Factory, ScanLine, FileText, Shield, Zap, Globe } from "lucide-react";
+import { Sparkles, ScanLine, FileText, Shield, Zap, Globe, Building2, Stethoscope, Scissors, BadgeCheck } from "lucide-react";
 
 export default function LandingPage() {
   return (
@@ -9,10 +9,13 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-9 h-9 rounded-md bg-primary">
-                <Factory className="w-5 h-5 text-primary-foreground" />
+              <div className="flex items-center justify-center w-9 h-9 rounded-full bg-primary">
+                <Sparkles className="w-5 h-5 text-primary-foreground" />
               </div>
-              <span className="font-bold text-lg">LaundryTrack</span>
+              <div className="flex flex-col">
+                <span className="font-bold text-lg leading-tight">Mr Bubbles</span>
+                <span className="text-[10px] text-muted-foreground leading-tight uppercase tracking-wider">Laundry & Linen Specialist</span>
+              </div>
             </div>
             <div className="flex items-center gap-4">
               <a
@@ -36,13 +39,17 @@ export default function LandingPage() {
             <div className="grid lg:grid-cols-2 gap-12 items-center">
               <div className="space-y-8">
                 <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                    <BadgeCheck className="w-4 h-4" />
+                    <span>ISO 9001 & ISO 45001 Certified</span>
+                  </div>
                   <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight">
-                    Industrial Garment
-                    <span className="block text-primary">Tracking Made Simple</span>
+                    Ireland's Leading
+                    <span className="block text-primary">Laundry & Linen Specialists</span>
                   </h1>
                   <p className="text-lg sm:text-xl text-muted-foreground max-w-lg">
-                    QR-code driven track-and-trace solution for industrial laundries.
-                    Manage garments across multiple factories with real-time visibility.
+                    QR-code driven track-and-trace solution with digital audit system.
+                    Fresh, hygienic, and on-time laundry solutions for Ireland's most trusted businesses.
                   </p>
                 </div>
 
@@ -58,14 +65,18 @@ export default function LandingPage() {
                   </Button>
                 </div>
 
-                <div className="flex items-center gap-6 text-sm text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-6 text-sm text-muted-foreground">
                   <div className="flex items-center gap-2">
                     <Shield className="w-4 h-4 text-primary" />
-                    <span>Scan-driven accuracy</span>
+                    <span>HSE & Tusla Approved</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Zap className="w-4 h-4 text-primary" />
                     <span>Real-time tracking</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <BadgeCheck className="w-4 h-4 text-primary" />
+                    <span>Irish Owned</span>
                   </div>
                 </div>
               </div>
@@ -73,10 +84,10 @@ export default function LandingPage() {
               <div className="relative">
                 <div className="bg-gradient-to-br from-primary/20 via-primary/10 to-transparent rounded-2xl p-8 border">
                   <div className="grid grid-cols-2 gap-4">
-                    <StatCard label="Garments Tracked" value="10K+" />
-                    <StatCard label="Factories" value="50+" />
-                    <StatCard label="Scans/Day" value="5K+" />
-                    <StatCard label="Uptime" value="99.9%" />
+                    <StatCard label="Garments Tracked" value="10K+" icon={Sparkles} />
+                    <StatCard label="Clients Served" value="100+" icon={Building2} />
+                    <StatCard label="Scans/Day" value="5K+" icon={ScanLine} />
+                    <StatCard label="Uptime" value="99.9%" icon={Zap} />
                   </div>
                 </div>
                 <div className="absolute -top-4 -right-4 w-24 h-24 bg-primary/10 rounded-full blur-2xl" />
@@ -90,44 +101,44 @@ export default function LandingPage() {
           <div className="max-w-7xl mx-auto">
             <div className="text-center mb-16">
               <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-                Everything You Need for Garment Management
+                Complete Laundry & Linen Solutions
               </h2>
               <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-                A complete solution designed for industrial laundries managing garments
-                across multiple factory locations.
+                Serving hotels, healthcare facilities, restaurants, hair salons, and industrial factories 
+                with QR label tracking and digital audit systems.
               </p>
             </div>
 
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               <FeatureCard
                 icon={ScanLine}
-                title="QR Code Scanning"
-                description="Fast, accurate scanning with NETUM CS7501 compatible readers. Batch scan hundreds of garments in minutes."
+                title="QR Label Tracking"
+                description="Driver app integrated QR scanning system. Track every garment from pickup to delivery with complete traceability."
               />
               <FeatureCard
-                icon={Factory}
-                title="Multi-Factory Support"
-                description="Manage garments across unlimited factories. Each factory gets their own secure portal and credentials."
+                icon={Building2}
+                title="Multi-Client Support"
+                description="Hotels, healthcare, restaurants, and factories. Each client gets their own secure portal and real-time visibility."
               />
               <FeatureCard
                 icon={FileText}
-                title="PDF Reports"
-                description="Generate professional batch reports and QR code sheets. Print-ready A4 format for label printers."
+                title="Digital Audit System"
+                description="Professional batch reports and documentation. ISO 9001 compliant record-keeping for full accountability."
               />
               <FeatureCard
-                icon={Shield}
-                title="Immutable Audit Trail"
-                description="Every scan is permanently recorded. Complete visibility into garment movement history."
+                icon={Stethoscope}
+                title="Healthcare Approved"
+                description="HSE-approved processes for medical and healthcare laundry. Sanitisation and stain treatment included."
               />
               <FeatureCard
-                icon={Globe}
-                title="Real-time Status"
-                description="Know exactly where every garment is. Simple two-location model: At Factory or At Laundry."
+                icon={Scissors}
+                title="Beauty & Salon Services"
+                description="Specialised service for towels, robes, gowns, and linens. Fresh, hygienic delivery guaranteed."
               />
               <FeatureCard
                 icon={Zap}
-                title="Batch Operations"
-                description="Process large volumes efficiently. Live counters, duplicate detection, and instant confirmation."
+                title="Efficient Operations"
+                description="Batch processing, duplicate detection, and real-time stock management. Pickup and delivery for businesses."
               />
             </div>
           </div>
@@ -136,11 +147,11 @@ export default function LandingPage() {
         <section className="py-20 px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto text-center">
             <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-              Ready to Modernize Your Laundry Operations?
+              Ready to Experience Premium Laundry Services?
             </h2>
             <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Join industrial laundries that trust LaundryTrack for accurate,
-              efficient garment management.
+              Join Ireland's most trusted businesses with fresh, hygienic, and on-time 
+              laundry solutions from Mr Bubbles Express.
             </p>
             <Button size="lg" asChild data-testid="button-get-started-cta">
               <a href="/api/login">
@@ -152,24 +163,31 @@ export default function LandingPage() {
       </main>
 
       <footer className="border-t py-8 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <Factory className="w-5 h-5 text-primary" />
-            <span className="font-semibold">LaundryTrack</span>
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-primary" />
+              <span className="font-semibold">Mr Bubbles Express</span>
+            </div>
+            <div className="text-sm text-muted-foreground text-center sm:text-right">
+              <p>Laundry & Linen Specialist | Drogheda, Co. Louth</p>
+              <p>086 270 9299 | info@mrbubblesexpress.com</p>
+            </div>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Industrial Garment Tracking System
-          </p>
+          <div className="mt-4 pt-4 border-t text-center text-xs text-muted-foreground">
+            <p>Certified to ISO 9001 & ISO 45001 | Fully Insured | Irish Owned | Reliable | Innovative</p>
+          </div>
         </div>
       </footer>
     </div>
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function StatCard({ label, value, icon: Icon }: { label: string; value: string; icon?: any }) {
   return (
     <Card className="border-0 bg-background/60 backdrop-blur-sm">
       <CardContent className="p-4 text-center">
+        {Icon && <Icon className="w-4 h-4 text-primary mx-auto mb-1" />}
         <p className="text-2xl font-bold text-primary">{value}</p>
         <p className="text-sm text-muted-foreground">{label}</p>
       </CardContent>
