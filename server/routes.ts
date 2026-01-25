@@ -447,14 +447,16 @@ export async function registerRoutes(
       
       doc.pipe(res);
 
-      // Generate barcodes for all garments
-      const barcodeWidth = 160;
-      const barcodeHeight = 50;
-      const cellHeight = barcodeHeight + 20;
+      // Generate barcodes for all garments - labels with factory, size, type info
+      const barcodeWidth = 150;
+      const barcodeHeight = 40;
+      const labelPadding = 8;
+      const labelHeight = barcodeHeight + 55; // Space for factory name, barcode, type/size
+      const cellHeight = labelHeight + 10;
       const columns = 3;
-      const startX = 35;
-      const startY = 100;
-      const columnWidth = 175;
+      const startX = 30;
+      const startY = 95;
+      const columnWidth = 180;
       const pageHeight = doc.page.height;
       
       // Helper function to generate barcode as buffer
@@ -463,10 +465,10 @@ export async function registerRoutes(
         JsBarcode(canvas, text, {
           format: "CODE128",
           width: 2,
-          height: 80,
+          height: 60,
           displayValue: true,
-          fontSize: 14,
-          margin: 5,
+          fontSize: 12,
+          margin: 2,
           background: "#ffffff",
           lineColor: "#000000"
         });
@@ -522,14 +524,33 @@ export async function registerRoutes(
           itemsOnCurrentPage = 0;
         }
         
-        // Generate barcode as buffer
-        const barcodeBuffer = generateBarcodeBuffer(garment.garmentId);
+        // Draw label border
+        const labelX = x + 5;
+        const labelWidth = columnWidth - 10;
+        doc.rect(labelX, currentY, labelWidth, labelHeight).stroke();
         
-        // Add barcode image
-        doc.image(barcodeBuffer, x + (columnWidth - barcodeWidth) / 2, currentY, { 
+        // Factory name at top of label
+        doc.fontSize(8).font("Helvetica-Bold").text(
+          `${factory.name} (${factory.code})`,
+          labelX,
+          currentY + labelPadding,
+          { width: labelWidth, align: "center" }
+        );
+        
+        // Generate and add barcode
+        const barcodeBuffer = generateBarcodeBuffer(garment.garmentId);
+        doc.image(barcodeBuffer, labelX + (labelWidth - barcodeWidth) / 2, currentY + 18, { 
           width: barcodeWidth, 
           height: barcodeHeight 
         });
+        
+        // Garment type and size at bottom
+        doc.fontSize(10).font("Helvetica-Bold").text(
+          `${garment.garmentType.toUpperCase()} - SIZE: ${garment.size}`,
+          labelX,
+          currentY + labelHeight - 18,
+          { width: labelWidth, align: "center" }
+        );
         
         itemsOnCurrentPage++;
       }
