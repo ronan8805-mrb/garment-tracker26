@@ -2,11 +2,12 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
-import { insertFactorySchema, bulkGarmentSchema, insertScanEventSchema, insertScanBatchSchema } from "@shared/schema";
+import { insertFactorySchema, bulkGarmentSchema, insertScanEventSchema, insertScanBatchSchema, createFactoryWithCredentialsSchema, factoryLoginSchema } from "@shared/schema";
 import { z } from "zod";
 import PDFDocument from "pdfkit";
 import JsBarcode from "jsbarcode";
 import { createCanvas } from "canvas";
+import bcrypt from "bcryptjs";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -25,6 +26,69 @@ export async function registerRoutes(
     }
     next();
   };
+
+  // Factory login endpoint (username/password authentication)
+  app.post("/api/factory/login", async (req, res) => {
+    try {
+      const validatedData = factoryLoginSchema.parse(req.body);
+      
+      const factory = await storage.getFactoryByUsername(validatedData.username);
+      if (!factory || !factory.passwordHash) {
+        return res.status(401).json({ message: "Invalid username or password" });
+      }
+      
+      const isValidPassword = await bcrypt.compare(validatedData.password, factory.passwordHash);
+      if (!isValidPassword) {
+        return res.status(401).json({ message: "Invalid username or password" });
+      }
+      
+      if (!factory.isActive) {
+        return res.status(403).json({ message: "This factory account is deactivated" });
+      }
+      
+      // Store factory session
+      (req.session as any).factoryId = factory.id;
+      (req.session as any).factoryName = factory.name;
+      (req.session as any).isFactoryUser = true;
+      
+      res.json({
+        success: true,
+        factory: {
+          id: factory.id,
+          name: factory.name,
+          code: factory.code,
+        },
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: error.errors[0].message });
+      }
+      console.error("Factory login error:", error);
+      res.status(500).json({ message: "Login failed" });
+    }
+  });
+
+  // Factory logout endpoint
+  app.post("/api/factory/logout", (req, res) => {
+    (req.session as any).factoryId = undefined;
+    (req.session as any).factoryName = undefined;
+    (req.session as any).isFactoryUser = false;
+    res.json({ success: true });
+  });
+
+  // Get current factory session
+  app.get("/api/factory/session", (req, res) => {
+    const session = req.session as any;
+    if (session?.isFactoryUser && session?.factoryId) {
+      res.json({
+        isLoggedIn: true,
+        factoryId: session.factoryId,
+        factoryName: session.factoryName,
+      });
+    } else {
+      res.json({ isLoggedIn: false });
+    }
+  });
 
   // User profile routes
   app.get("/api/user/profile", isAuthenticated, async (req: any, res) => {
@@ -131,16 +195,36 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Only admins can create factories" });
       }
 
-      const validatedData = insertFactorySchema.parse(req.body);
+      const validatedData = createFactoryWithCredentialsSchema.parse(req.body);
       
       // Check if code already exists
-      const existing = await storage.getFactoryByCode(validatedData.code);
-      if (existing) {
+      const existingCode = await storage.getFactoryByCode(validatedData.code);
+      if (existingCode) {
         return res.status(400).json({ message: "Factory code already exists" });
       }
       
-      const factory = await storage.createFactory(validatedData);
-      res.status(201).json(factory);
+      // Check if username already exists
+      const existingUsername = await storage.getFactoryByUsername(validatedData.username);
+      if (existingUsername) {
+        return res.status(400).json({ message: "Username already exists" });
+      }
+      
+      // Hash the password
+      const passwordHash = await bcrypt.hash(validatedData.password, 10);
+      
+      const factory = await storage.createFactoryWithPassword({
+        name: validatedData.name,
+        code: validatedData.code,
+        location: validatedData.location,
+        username: validatedData.username,
+        passwordHash,
+      });
+      
+      // Return factory with the original password (so admin can share it)
+      res.status(201).json({
+        ...factory,
+        password: validatedData.password, // Include password for admin to share
+      });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: error.errors[0].message });

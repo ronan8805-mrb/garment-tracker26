@@ -23,7 +23,9 @@ export interface IStorage {
   getFactories(): Promise<Factory[]>;
   getFactory(id: string): Promise<Factory | undefined>;
   getFactoryByCode(code: string): Promise<Factory | undefined>;
+  getFactoryByUsername(username: string): Promise<Factory | undefined>;
   createFactory(factory: InsertFactory): Promise<Factory>;
+  createFactoryWithPassword(factory: InsertFactory & { passwordHash: string }): Promise<Factory>;
   updateFactory(id: string, factory: Partial<InsertFactory>): Promise<Factory | undefined>;
 
   // Garment operations
@@ -85,7 +87,17 @@ export class DatabaseStorage implements IStorage {
     return factory;
   }
 
+  async getFactoryByUsername(username: string): Promise<Factory | undefined> {
+    const [factory] = await db.select().from(factories).where(eq(factories.username, username));
+    return factory;
+  }
+
   async createFactory(factory: InsertFactory): Promise<Factory> {
+    const [created] = await db.insert(factories).values(factory).returning();
+    return created;
+  }
+
+  async createFactoryWithPassword(factory: InsertFactory & { passwordHash: string }): Promise<Factory> {
     const [created] = await db.insert(factories).values(factory).returning();
     return created;
   }
