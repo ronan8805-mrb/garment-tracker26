@@ -715,13 +715,18 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/factories/:id/qr-codes", isAuthenticated, async (req: any, res) => {
+  app.get("/api/factories/:id/qr-codes", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const profile = await storage.getUserProfile(userId);
-      
-      if (profile?.role !== "admin") {
-        return res.status(403).json({ message: "Only admins can download QR codes" });
+      // Only allow admin sessions to download QR codes
+      if (!req.isAdminSession) {
+        const userId = req.user?.claims?.sub;
+        if (!userId) {
+          return res.status(403).json({ message: "Only admins can download QR codes" });
+        }
+        const profile = await storage.getUserProfile(userId);
+        if (profile?.role !== "admin") {
+          return res.status(403).json({ message: "Only admins can download QR codes" });
+        }
       }
 
       const factory = await storage.getFactory(req.params.id);
