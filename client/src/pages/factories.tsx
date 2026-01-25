@@ -148,7 +148,7 @@ export default function FactoriesPage() {
               Add Factory
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create New Factory</DialogTitle>
             </DialogHeader>
@@ -262,7 +262,7 @@ export default function FactoriesPage() {
       </Card>
 
       <Dialog open={!!editingFactory} onOpenChange={() => setEditingFactory(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Factory</DialogTitle>
           </DialogHeader>
