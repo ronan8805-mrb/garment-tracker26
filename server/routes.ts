@@ -5,6 +5,7 @@ import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integra
 import { insertFactorySchema, bulkGarmentSchema, insertScanEventSchema, insertScanBatchSchema } from "@shared/schema";
 import { z } from "zod";
 import PDFDocument from "pdfkit";
+import QRCode from "qrcode";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -438,79 +439,94 @@ export async function registerRoutes(
       const garments = await storage.getGarments(req.params.id);
 
       // Create PDF document
-      const doc = new PDFDocument({ size: "A4", margin: 50 });
+      const doc = new PDFDocument({ size: "A4", margin: 30 });
       
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${factory.code}_QR_Codes_${garments.length}_Garments.pdf"`);
       
       doc.pipe(res);
 
-      // Header
-      doc.fontSize(24).font("Helvetica-Bold").text("Mr Bubbles Express", { align: "center" });
-      doc.fontSize(10).font("Helvetica").text("Laundry & Linen Specialist", { align: "center" });
-      doc.moveDown(0.5);
-      doc.fontSize(8).fillColor("#666").text("ISO 9001 & ISO 45001 Certified | Drogheda, Co. Louth", { align: "center" });
-      doc.fillColor("#000");
-      doc.moveDown(2);
-
-      // Title
-      doc.fontSize(18).font("Helvetica-Bold").text("QR CODE LIST", { align: "center" });
-      doc.moveDown(1);
-
-      // Horizontal line
-      doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
-      doc.moveDown(1);
-
-      // Factory details
-      doc.fontSize(12).font("Helvetica-Bold").text("Factory Details");
-      doc.moveDown(0.5);
+      // Generate QR codes for all garments
+      const qrSize = 80;
+      const labelHeight = 25;
+      const cellWidth = 130;
+      const cellHeight = qrSize + labelHeight + 10;
+      const columns = 4;
+      const startX = 35;
+      const startY = 100;
+      const pageHeight = doc.page.height;
       
-      doc.fontSize(11).font("Helvetica");
-      doc.text(`Factory: `, { continued: true }).font("Helvetica-Bold").text(`${factory.name} (${factory.code})`);
-      doc.font("Helvetica").text(`Total Garments: `, { continued: true }).font("Helvetica-Bold").text(String(garments.length));
-      doc.font("Helvetica").text(`Generated: `, { continued: true }).text(new Date().toLocaleString());
-      
-      doc.moveDown(1.5);
+      // Add header function
+      const addHeader = () => {
+        doc.fontSize(16).font("Helvetica-Bold").text("Mr Bubbles Express", 30, 25, { align: "center" });
+        doc.fontSize(8).font("Helvetica").text("Laundry & Linen Specialist | ISO 9001 & ISO 45001", { align: "center" });
+        doc.moveDown(0.3);
+        doc.fontSize(10).font("Helvetica-Bold").text(`${factory.name} (${factory.code}) - QR Codes`, { align: "center" });
+        doc.moveTo(30, 75).lineTo(565, 75).stroke();
+      };
 
-      // Garment IDs section
-      doc.fontSize(12).font("Helvetica-Bold").text("Garment IDs for QR Code Generation");
-      doc.moveDown(0.5);
-      doc.fontSize(9).font("Helvetica").fillColor("#666").text("Use these IDs to generate QR codes with any QR code generator tool.");
-      doc.fillColor("#000");
-      doc.moveDown(1);
+      // Add footer function
+      const addFooter = (pageNum: number, totalPages: number) => {
+        doc.fontSize(7).fillColor("#666").text(
+          `Page ${pageNum} of ${totalPages} | Generated: ${new Date().toLocaleString()} | Mr Bubbles Express | 086 270 9299`,
+          30, pageHeight - 30, { align: "center", width: 535 }
+        );
+        doc.fillColor("#000");
+      };
 
-      // Create a table-like layout for garment IDs (3 columns)
-      const columns = 3;
-      const columnWidth = 165;
-      const startX = 50;
-      let currentY = doc.y;
+      // Calculate total pages needed
+      const itemsPerPage = Math.floor((pageHeight - startY - 50) / cellHeight) * columns;
+      const totalPages = Math.ceil(garments.length / itemsPerPage);
       
-      doc.fontSize(9).font("Helvetica");
+      addHeader();
       
-      garments.forEach((garment, index) => {
-        const col = index % columns;
-        const x = startX + (col * columnWidth);
+      let currentPage = 1;
+      let itemsOnCurrentPage = 0;
+      let currentY = startY;
+
+      for (let i = 0; i < garments.length; i++) {
+        const garment = garments[i];
+        const col = itemsOnCurrentPage % columns;
+        const x = startX + (col * cellWidth);
         
-        if (col === 0 && index > 0) {
-          currentY += 14;
+        // Check if we need a new row
+        if (col === 0 && itemsOnCurrentPage > 0) {
+          currentY += cellHeight;
         }
         
         // Check if we need a new page
-        if (currentY > 750) {
+        if (currentY + cellHeight > pageHeight - 50) {
+          addFooter(currentPage, totalPages);
           doc.addPage();
-          currentY = 50;
+          currentPage++;
+          addHeader();
+          currentY = startY;
+          itemsOnCurrentPage = 0;
         }
         
-        doc.text(garment.garmentId, x, currentY, { width: columnWidth - 10 });
-      });
+        // Generate QR code as data URL
+        const qrDataUrl = await QRCode.toDataURL(garment.garmentId, {
+          width: qrSize * 2,
+          margin: 1,
+          errorCorrectionLevel: "M"
+        });
+        
+        // Add QR code image
+        doc.image(qrDataUrl, x + (cellWidth - qrSize) / 2, currentY, { width: qrSize, height: qrSize });
+        
+        // Add label below QR code
+        doc.fontSize(6).font("Helvetica").text(
+          garment.garmentId, 
+          x, 
+          currentY + qrSize + 2, 
+          { width: cellWidth, align: "center" }
+        );
+        
+        itemsOnCurrentPage++;
+      }
       
-      doc.moveDown(2);
-
-      // Footer on last page
-      const footerY = doc.page.height - 80;
-      doc.moveTo(50, footerY).lineTo(545, footerY).stroke();
-      doc.fontSize(9).fillColor("#666").text(`Total: ${garments.length} garments`, 50, footerY + 10, { align: "center" });
-      doc.text("Mr Bubbles Express | 086 270 9299 | info@mrbubblesexpress.com", { align: "center" });
+      // Add footer on last page
+      addFooter(currentPage, totalPages);
 
       doc.end();
     } catch (error) {
