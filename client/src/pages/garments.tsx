@@ -175,20 +175,22 @@ export default function GarmentsPage() {
                 data-testid="input-search-garments"
               />
             </div>
-            <Select value={filterFactory} onValueChange={setFilterFactory}>
-              <SelectTrigger className="w-[180px]" data-testid="select-filter-factory">
-                <Building2 className="w-4 h-4 mr-2" />
-                <SelectValue placeholder="All Factories" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Factories</SelectItem>
-                {factories?.map((f) => (
-                  <SelectItem key={f.id} value={f.id}>
-                    {f.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {isAdminSession && (
+              <Select value={filterFactory} onValueChange={setFilterFactory}>
+                <SelectTrigger className="w-[180px]" data-testid="select-filter-factory">
+                  <Building2 className="w-4 h-4 mr-2" />
+                  <SelectValue placeholder="All Factories" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Factories</SelectItem>
+                  {factories?.map((f) => (
+                    <SelectItem key={f.id} value={f.id}>
+                      {f.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Select value={filterStatus} onValueChange={setFilterStatus}>
               <SelectTrigger className="w-[150px]" data-testid="select-filter-status">
                 <Filter className="w-4 h-4 mr-2" />
