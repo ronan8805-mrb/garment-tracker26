@@ -1,0 +1,15 @@
+QR CODE LIST
+============
+
+Factory: honey factory (DROG)
+Total Garments: 1
+Generated: 1/25/2026, 6:57:43 PM
+
+Garment IDs (for QR Code generation):
+=====================================
+
+DROG-LA-XL-448287
+
+---
+Use these IDs to generate QR codes with any QR code generator tool.
+Recommended: QR code containing only the Garment ID string.
