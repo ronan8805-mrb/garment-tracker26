@@ -193,9 +193,19 @@ export async function registerRoutes(
   });
 
   // Dashboard routes
-  app.get("/api/dashboard/admin", isAuthenticated, async (req: any, res) => {
+  app.get("/api/dashboard/admin", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      // Check if admin session
+      if (req.isAdminSession) {
+        const stats = await storage.getAdminDashboardStats();
+        return res.json(stats);
+      }
+      
+      // Fallback to Replit Auth
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       const profile = await storage.getUserProfile(userId);
       
       if (profile?.role !== "admin") {
@@ -217,9 +227,15 @@ export async function registerRoutes(
       // Factory session login (username/password)
       if (req.isFactorySession) {
         factoryId = req.factoryId;
+      } else if (req.isAdminSession) {
+        // Admin session - return empty factory dashboard (admins use admin dashboard)
+        return res.status(400).json({ message: "Admins should use admin dashboard" });
       } else {
         // Replit Auth login - check user profile
-        const userId = req.user.claims.sub;
+        const userId = req.user?.claims?.sub;
+        if (!userId) {
+          return res.status(400).json({ message: "No factory assigned" });
+        }
         const profile = await storage.getUserProfile(userId);
         factoryId = profile?.factoryId || null;
       }
@@ -239,13 +255,20 @@ export async function registerRoutes(
   // Factory routes - admin only for listing all, factory users can only see their assigned factory
   app.get("/api/factories", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      if (req.isFactorySession) {
+      if (req.isAdminSession) {
+        // Admin session login - see all factories
+        const factories = await storage.getFactories();
+        res.json(factories);
+      } else if (req.isFactorySession) {
         // Factory session login - only see their own factory
         const factory = await storage.getFactory(req.factoryId);
         res.json(factory ? [factory] : []);
       } else {
-        // Replit Auth login
-        const userId = req.user.claims.sub;
+        // Replit Auth login (fallback)
+        const userId = req.user?.claims?.sub;
+        if (!userId) {
+          return res.json([]);
+        }
         const profile = await storage.getUserProfile(userId);
         
         if (profile?.role === "admin") {
@@ -356,15 +379,19 @@ export async function registerRoutes(
     try {
       let factoryId: string | undefined;
       
-      if (req.isFactorySession) {
+      if (req.isAdminSession) {
+        // Admin session login - can filter by factory or see all
+        factoryId = req.query.factory as string | undefined;
+      } else if (req.isFactorySession) {
         // Factory session login - only see their own garments
         factoryId = req.factoryId;
       } else {
-        // Replit Auth login
-        const userId = req.user.claims.sub;
-        const profile = await storage.getUserProfile(userId);
-        // Factory users can only see their own garments, admins can filter by factory
-        factoryId = profile?.role === "factory" ? profile.factoryId || undefined : (req.query.factory as string | undefined);
+        // Replit Auth login (fallback)
+        const userId = req.user?.claims?.sub;
+        if (userId) {
+          const profile = await storage.getUserProfile(userId);
+          factoryId = profile?.role === "factory" ? profile.factoryId || undefined : (req.query.factory as string | undefined);
+        }
       }
       
       const garments = await storage.getGarments(factoryId);
@@ -375,13 +402,19 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/garments/bulk", isAuthenticated, async (req: any, res) => {
+  app.post("/api/garments/bulk", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const profile = await storage.getUserProfile(userId);
-      
-      if (profile?.role !== "admin") {
-        return res.status(403).json({ message: "Only admins can create garments" });
+      // Only allow admin sessions to create garments
+      if (!req.isAdminSession) {
+        // Check Replit Auth fallback
+        const userId = req.user?.claims?.sub;
+        if (!userId) {
+          return res.status(403).json({ message: "Only admins can create garments" });
+        }
+        const profile = await storage.getUserProfile(userId);
+        if (profile?.role !== "admin") {
+          return res.status(403).json({ message: "Only admins can create garments" });
+        }
       }
 
       const validatedData = bulkGarmentSchema.parse(req.body);
@@ -495,14 +528,19 @@ export async function registerRoutes(
     try {
       let factoryId: string | undefined;
       
-      if (req.isFactorySession) {
+      if (req.isAdminSession) {
+        // Admin session login - see all batches
+        factoryId = undefined;
+      } else if (req.isFactorySession) {
         // Factory session login - only see their own batches
         factoryId = req.factoryId;
       } else {
-        // Replit Auth login
-        const userId = req.user.claims.sub;
-        const profile = await storage.getUserProfile(userId);
-        factoryId = profile?.role === "factory" ? profile.factoryId || undefined : undefined;
+        // Replit Auth login (fallback)
+        const userId = req.user?.claims?.sub;
+        if (userId) {
+          const profile = await storage.getUserProfile(userId);
+          factoryId = profile?.role === "factory" ? profile.factoryId || undefined : undefined;
+        }
       }
       
       const batches = await storage.getBatches(factoryId);
@@ -524,16 +562,22 @@ export async function registerRoutes(
       let userId: string;
       let userFactoryId: string | null = null;
       
-      if (req.isFactorySession) {
+      if (req.isAdminSession) {
+        // Admin session login
+        userId = "admin";
+        userFactoryId = null;
+      } else if (req.isFactorySession) {
         // Factory session login
         userId = `factory:${req.factoryId}`;
         userFactoryId = req.factoryId;
       } else {
-        // Replit Auth login
-        userId = req.user.claims.sub;
-        const profile = await storage.getUserProfile(userId);
-        if (profile?.role === "factory") {
-          userFactoryId = profile.factoryId;
+        // Replit Auth login (fallback)
+        userId = req.user?.claims?.sub || "unknown";
+        if (req.user?.claims?.sub) {
+          const profile = await storage.getUserProfile(userId);
+          if (profile?.role === "factory") {
+            userFactoryId = profile.factoryId;
+          }
         }
       }
 
