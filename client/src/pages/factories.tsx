@@ -55,7 +55,10 @@ const factoryFormSchema = z.object({
 
 const editFactoryFormSchema = z.object({
   name: z.string().min(1, "Factory name is required"),
+  code: z.string().min(1, "Code is required").max(10, "Code must be 10 characters or less").regex(/^[A-Z0-9]+$/, "Code must be uppercase letters and numbers only"),
   location: z.string().optional(),
+  username: z.string().min(3, "Username must be at least 3 characters").regex(/^[a-z0-9_]+$/, "Username must be lowercase letters, numbers, and underscores only"),
+  password: z.string().optional(),
   isActive: z.boolean().default(true),
 });
 
@@ -270,7 +273,10 @@ export default function FactoriesPage() {
             <EditFactoryForm
               defaultValues={{
                 name: editingFactory.name,
+                code: editingFactory.code,
                 location: editingFactory.location || undefined,
+                username: editingFactory.username || "",
+                password: "",
                 isActive: editingFactory.isActive,
               }}
               onSubmit={(data) =>
@@ -491,10 +497,17 @@ function EditFactoryForm({
     resolver: zodResolver(editFactoryFormSchema),
     defaultValues: {
       name: defaultValues.name || "",
+      code: defaultValues.code || "",
       location: defaultValues.location || "",
+      username: defaultValues.username || "",
+      password: "",
       isActive: defaultValues.isActive ?? true,
     },
   });
+
+  const regeneratePassword = () => {
+    form.setValue("password", generatePassword());
+  };
 
   return (
     <Form {...form}>
@@ -519,6 +532,26 @@ function EditFactoryForm({
 
         <FormField
           control={form.control}
+          name="code"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Factory Code</FormLabel>
+              <FormControl>
+                <Input
+                  placeholder="e.g., HF"
+                  {...field}
+                  onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                  data-testid="input-edit-factory-code"
+                />
+              </FormControl>
+              <FormDescription>Used for garment ID prefixes</FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
           name="location"
           render={({ field }) => (
             <FormItem>
@@ -534,6 +567,67 @@ function EditFactoryForm({
             </FormItem>
           )}
         />
+
+        <div className="border rounded-lg p-4 space-y-4">
+          <div className="flex items-center gap-2">
+            <Key className="w-4 h-4 text-primary" />
+            <span className="font-medium">Login Credentials</span>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Update the factory login credentials. Leave password blank to keep the current password.
+          </p>
+
+          <FormField
+            control={form.control}
+            name="username"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Username</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="e.g., honey_factory"
+                    {...field}
+                    onChange={(e) => field.onChange(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                    data-testid="input-edit-factory-username"
+                  />
+                </FormControl>
+                <FormDescription>Lowercase letters, numbers, and underscores only</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>New Password (Optional)</FormLabel>
+                <div className="flex gap-2">
+                  <FormControl>
+                    <Input
+                      {...field}
+                      placeholder="Leave blank to keep current password"
+                      data-testid="input-edit-factory-password"
+                    />
+                  </FormControl>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={regeneratePassword}
+                    title="Generate new password"
+                    data-testid="button-edit-regenerate-password"
+                  >
+                    <Key className="w-4 h-4" />
+                  </Button>
+                </div>
+                <FormDescription>Only fill this if you want to change the password</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
 
         <FormField
           control={form.control}

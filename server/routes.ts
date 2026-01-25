@@ -354,16 +354,29 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/factories/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/factories/:id", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const profile = await storage.getUserProfile(userId);
-      
-      if (profile?.role !== "admin") {
-        return res.status(403).json({ message: "Only admins can update factories" });
+      // Only allow admin sessions to update factories
+      if (!req.isAdminSession) {
+        const userId = req.user?.claims?.sub;
+        if (!userId) {
+          return res.status(403).json({ message: "Only admins can update factories" });
+        }
+        const profile = await storage.getUserProfile(userId);
+        if (profile?.role !== "admin") {
+          return res.status(403).json({ message: "Only admins can update factories" });
+        }
       }
 
-      const factory = await storage.updateFactory(req.params.id, req.body);
+      const { password, ...otherData } = req.body;
+      
+      // If password is provided and not empty, hash it
+      const updateData: any = { ...otherData };
+      if (password && password.trim() !== "") {
+        updateData.passwordHash = await bcrypt.hash(password, 10);
+      }
+
+      const factory = await storage.updateFactory(req.params.id, updateData);
       if (!factory) {
         return res.status(404).json({ message: "Factory not found" });
       }
