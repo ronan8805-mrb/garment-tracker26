@@ -661,6 +661,7 @@ export async function registerRoutes(
       }
 
       const factory = await storage.getFactory(batch.factoryId);
+      const scanEventsData = await storage.getScanEventsByBatchId(batch.id);
 
       // Create PDF document
       const doc = new PDFDocument({ size: "A4", margin: 50 });
@@ -678,8 +679,9 @@ export async function registerRoutes(
       doc.fillColor("#000");
       doc.moveDown(2);
 
-      // Title
-      doc.fontSize(18).font("Helvetica-Bold").text("BATCH REPORT", { align: "center" });
+      // Title - include direction
+      const reportTitle = batch.direction === "IN" ? "SCAN IN REPORT" : "SCAN OUT REPORT";
+      doc.fontSize(18).font("Helvetica-Bold").text(reportTitle, { align: "center" });
       doc.moveDown(1);
 
       // Horizontal line
@@ -694,13 +696,66 @@ export async function registerRoutes(
       doc.text(`Batch Number: `, { continued: true }).font("Helvetica-Bold").text(batch.batchNumber);
       doc.font("Helvetica").text(`Factory: `, { continued: true }).font("Helvetica-Bold").text(`${factory?.name || "Unknown"} (${factory?.code || "N/A"})`);
       doc.font("Helvetica").text(`Location: `, { continued: true }).font("Helvetica-Bold").text(batch.location);
-      doc.font("Helvetica").text(`Direction: `, { continued: true }).font("Helvetica-Bold").text(batch.direction);
+      doc.font("Helvetica").text(`Direction: `, { continued: true }).font("Helvetica-Bold").text(batch.direction === "IN" ? "Scan IN" : "Scan OUT");
       doc.font("Helvetica").text(`Total Items: `, { continued: true }).font("Helvetica-Bold").text(String(batch.totalItems || 0));
       doc.moveDown(0.5);
       doc.font("Helvetica").text(`Created: `, { continued: true }).text(batch.createdAt ? new Date(batch.createdAt).toLocaleString() : "Unknown");
       doc.text(`Completed: `, { continued: true }).text(batch.completedAt ? new Date(batch.completedAt).toLocaleString() : "Pending");
       
-      doc.moveDown(2);
+      doc.moveDown(1.5);
+
+      // Scanned Items Table with Timestamps
+      if (scanEventsData.length > 0) {
+        doc.fontSize(12).font("Helvetica-Bold").text("Scanned Items");
+        doc.moveDown(0.5);
+        
+        // Table header
+        const tableTop = doc.y;
+        const col1 = 50;  // #
+        const col2 = 80;  // Garment ID
+        const col3 = 280; // Type/Size
+        const col4 = 380; // Timestamp
+        
+        doc.fontSize(10).font("Helvetica-Bold");
+        doc.text("#", col1, tableTop);
+        doc.text("Garment ID", col2, tableTop);
+        doc.text("Type / Size", col3, tableTop);
+        doc.text("Scan Time", col4, tableTop);
+        
+        doc.moveDown(0.3);
+        doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
+        doc.moveDown(0.3);
+
+        // Table rows
+        doc.font("Helvetica").fontSize(9);
+        let rowY = doc.y;
+        const lineHeight = 14;
+        
+        for (let i = 0; i < scanEventsData.length; i++) {
+          const event = scanEventsData[i];
+          
+          // Check if we need a new page
+          if (rowY > doc.page.height - 100) {
+            doc.addPage();
+            rowY = 50;
+          }
+          
+          // Get garment details
+          const garment = await storage.getGarmentByGarmentId(event.garmentId);
+          const typeSize = garment ? `${garment.garmentType} / ${garment.size}` : "-";
+          const scanTime = event.scannedAt ? new Date(event.scannedAt).toLocaleString() : "-";
+          
+          doc.text(String(i + 1), col1, rowY);
+          doc.text(event.garmentId, col2, rowY);
+          doc.text(typeSize, col3, rowY);
+          doc.text(scanTime, col4, rowY);
+          
+          rowY += lineHeight;
+        }
+        
+        doc.y = rowY;
+        doc.moveDown(1);
+      }
 
       // Footer
       doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();

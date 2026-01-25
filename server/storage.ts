@@ -38,6 +38,7 @@ export interface IStorage {
   // Scan event operations
   createScanEvent(event: InsertScanEvent): Promise<ScanEvent>;
   getScanEvents(garmentId?: string): Promise<ScanEvent[]>;
+  getScanEventsByBatchId(batchId: string): Promise<ScanEvent[]>;
 
   // Batch operations
   getBatches(factoryId?: string): Promise<ScanBatch[]>;
@@ -149,6 +150,10 @@ export class DatabaseStorage implements IStorage {
       return db.select().from(scanEvents).where(eq(scanEvents.garmentId, garmentId)).orderBy(desc(scanEvents.scannedAt));
     }
     return db.select().from(scanEvents).orderBy(desc(scanEvents.scannedAt));
+  }
+
+  async getScanEventsByBatchId(batchId: string): Promise<ScanEvent[]> {
+    return db.select().from(scanEvents).where(eq(scanEvents.batchId, batchId)).orderBy(scanEvents.scannedAt);
   }
 
   // Batch operations
