@@ -312,7 +312,7 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
                   <div>
                     <CardTitle className="text-lg">Scan Input</CardTitle>
                     <CardDescription>
-                      Scan QR codes or type garment IDs
+                      Scan barcodes or type garment IDs
                     </CardDescription>
                   </div>
                 </div>
@@ -410,7 +410,7 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
                     <Package className="w-12 h-12 text-muted-foreground/50 mb-3" />
                     <p className="font-medium text-muted-foreground">No items scanned</p>
                     <p className="text-sm text-muted-foreground">
-                      Scan QR codes to add items to this batch
+                      Scan barcodes to add items to this batch
                     </p>
                   </div>
                 )}

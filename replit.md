@@ -1,7 +1,7 @@
 # LaundryTrack - Industrial Garment Tracking System
 
 ## Overview
-LaundryTrack is a QR-code driven track-and-trace web application for industrial laundries managing garments for multiple factories. The system uses scan-based tracking where garments are only considered at a location when they are scanned IN.
+LaundryTrack is a barcode-driven track-and-trace web application for industrial laundries managing garments for multiple factories. The system uses scan-based tracking where garments are only considered at a location when they are scanned IN.
 
 ## Core Principles
 - **Scan-driven only**: No manual status editing
@@ -14,7 +14,7 @@ LaundryTrack is a QR-code driven track-and-trace web application for industrial 
 ### Laundrette Admin (Full Control)
 - See all factories and garments
 - See all scan events
-- Generate QR codes
+- Generate barcodes
 - Download batch reports
 - Create and manage factory accounts
 
@@ -22,7 +22,7 @@ LaundryTrack is a QR-code driven track-and-trace web application for industrial 
 - Scan garments OUT of factory (sending to laundry)
 - Scan garments IN to factory (receiving from laundry)
 - View their own garments (read-only)
-- Cannot see other factories or generate QR codes
+- Cannot see other factories or generate barcodes
 
 ## Tech Stack
 - **Frontend**: React with TypeScript, Tailwind CSS, shadcn/ui
@@ -67,10 +67,10 @@ LaundryTrack is a QR-code driven track-and-trace web application for industrial 
 - Each factory has a unique code (e.g., "HF" for Honey Factory)
 - Admin-only access
 
-### Garment Creation with QR Codes
+### Garment Creation with Barcodes
 - Bulk create garments by type, size, and quantity
 - Auto-generated garment IDs (format: FACTORY-TYPE-SIZE-NUMBER)
-- Download QR code list for external QR generation
+- Download barcode sheets for printing and labeling
 
 ### Scanning Interface
 - Auto-focused input for barcode scanner compatibility
@@ -82,7 +82,7 @@ LaundryTrack is a QR-code driven track-and-trace web application for industrial 
 ### Reports
 - View all scan batches
 - Download batch reports
-- Download QR code lists per factory
+- Download barcode sheets per factory
 
 ## API Endpoints
 
@@ -115,7 +115,7 @@ LaundryTrack is a QR-code driven track-and-trace web application for industrial 
 
 ### Reports
 - `GET /api/batches/:id/report` - Download batch report
-- `GET /api/factories/:id/qr-codes` - Download QR code list
+- `GET /api/factories/:id/qr-codes` - Download barcode sheet
 
 ## Database Schema
 

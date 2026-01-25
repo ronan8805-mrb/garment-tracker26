@@ -5,7 +5,8 @@ import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integra
 import { insertFactorySchema, bulkGarmentSchema, insertScanEventSchema, insertScanBatchSchema } from "@shared/schema";
 import { z } from "zod";
 import PDFDocument from "pdfkit";
-import QRCode from "qrcode";
+import JsBarcode from "jsbarcode";
+import { createCanvas } from "canvas";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -442,26 +443,42 @@ export async function registerRoutes(
       const doc = new PDFDocument({ size: "A4", margin: 30 });
       
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="${factory.code}_QR_Codes_${garments.length}_Garments.pdf"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${factory.code}_Barcodes_${garments.length}_Garments.pdf"`);
       
       doc.pipe(res);
 
-      // Generate QR codes for all garments
-      const qrSize = 80;
-      const labelHeight = 25;
-      const cellWidth = 130;
-      const cellHeight = qrSize + labelHeight + 10;
-      const columns = 4;
+      // Generate barcodes for all garments
+      const barcodeWidth = 160;
+      const barcodeHeight = 50;
+      const cellHeight = barcodeHeight + 20;
+      const columns = 3;
       const startX = 35;
       const startY = 100;
+      const columnWidth = 175;
       const pageHeight = doc.page.height;
+      
+      // Helper function to generate barcode as buffer
+      const generateBarcodeBuffer = (text: string): Buffer => {
+        const canvas = createCanvas(barcodeWidth * 2, barcodeHeight * 2);
+        JsBarcode(canvas, text, {
+          format: "CODE128",
+          width: 2,
+          height: 80,
+          displayValue: true,
+          fontSize: 14,
+          margin: 5,
+          background: "#ffffff",
+          lineColor: "#000000"
+        });
+        return canvas.toBuffer("image/png");
+      };
       
       // Add header function
       const addHeader = () => {
         doc.fontSize(16).font("Helvetica-Bold").text("Mr Bubbles Express", 30, 25, { align: "center" });
         doc.fontSize(8).font("Helvetica").text("Laundry & Linen Specialist | ISO 9001 & ISO 45001", { align: "center" });
         doc.moveDown(0.3);
-        doc.fontSize(10).font("Helvetica-Bold").text(`${factory.name} (${factory.code}) - QR Codes`, { align: "center" });
+        doc.fontSize(10).font("Helvetica-Bold").text(`${factory.name} (${factory.code}) - Barcodes`, { align: "center" });
         doc.moveTo(30, 75).lineTo(565, 75).stroke();
       };
 
@@ -475,7 +492,8 @@ export async function registerRoutes(
       };
 
       // Calculate total pages needed
-      const itemsPerPage = Math.floor((pageHeight - startY - 50) / cellHeight) * columns;
+      const rowsPerPage = Math.floor((pageHeight - startY - 50) / cellHeight);
+      const itemsPerPage = rowsPerPage * columns;
       const totalPages = Math.ceil(garments.length / itemsPerPage);
       
       addHeader();
@@ -487,7 +505,7 @@ export async function registerRoutes(
       for (let i = 0; i < garments.length; i++) {
         const garment = garments[i];
         const col = itemsOnCurrentPage % columns;
-        const x = startX + (col * cellWidth);
+        const x = startX + (col * columnWidth);
         
         // Check if we need a new row
         if (col === 0 && itemsOnCurrentPage > 0) {
@@ -504,23 +522,14 @@ export async function registerRoutes(
           itemsOnCurrentPage = 0;
         }
         
-        // Generate QR code as data URL
-        const qrDataUrl = await QRCode.toDataURL(garment.garmentId, {
-          width: qrSize * 2,
-          margin: 1,
-          errorCorrectionLevel: "M"
+        // Generate barcode as buffer
+        const barcodeBuffer = generateBarcodeBuffer(garment.garmentId);
+        
+        // Add barcode image
+        doc.image(barcodeBuffer, x + (columnWidth - barcodeWidth) / 2, currentY, { 
+          width: barcodeWidth, 
+          height: barcodeHeight 
         });
-        
-        // Add QR code image
-        doc.image(qrDataUrl, x + (cellWidth - qrSize) / 2, currentY, { width: qrSize, height: qrSize });
-        
-        // Add label below QR code
-        doc.fontSize(6).font("Helvetica").text(
-          garment.garmentId, 
-          x, 
-          currentY + qrSize + 2, 
-          { width: cellWidth, align: "center" }
-        );
         
         itemsOnCurrentPage++;
       }
@@ -530,8 +539,8 @@ export async function registerRoutes(
 
       doc.end();
     } catch (error) {
-      console.error("Error generating QR list:", error);
-      res.status(500).json({ message: "Failed to generate QR list" });
+      console.error("Error generating barcode list:", error);
+      res.status(500).json({ message: "Failed to generate barcode list" });
     }
   });
 

@@ -46,7 +46,7 @@ import {
   Shirt,
   Plus,
   Search,
-  QrCode,
+  Barcode,
   Download,
   Trash2,
   Factory,
@@ -104,7 +104,7 @@ export default function GarmentsPage() {
       setIsCreateOpen(false);
       toast({
         title: "Garments created",
-        description: `${response.count} garments have been created with QR codes.`,
+        description: `${response.count} garments have been created with barcodes.`,
       });
     },
     onError: (error: Error) => {
@@ -133,7 +133,7 @@ export default function GarmentsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Garments</h1>
-          <p className="text-muted-foreground">Manage garments and generate QR codes</p>
+          <p className="text-muted-foreground">Manage garments and generate barcodes</p>
         </div>
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
@@ -144,9 +144,9 @@ export default function GarmentsPage() {
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Create Garments & Generate QR Codes</DialogTitle>
+              <DialogTitle>Create Garments & Generate Barcodes</DialogTitle>
               <DialogDescription>
-                Add garment types with sizes and quantities. QR codes will be generated automatically.
+                Add garment types with sizes and quantities. Barcodes will be generated automatically.
               </DialogDescription>
             </DialogHeader>
             <BulkGarmentForm
@@ -222,7 +222,7 @@ export default function GarmentsPage() {
                     <TableRow key={garment.id} data-testid={`row-garment-${garment.id}`}>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <QrCode className="w-4 h-4 text-muted-foreground" />
+                          <Barcode className="w-4 h-4 text-muted-foreground" />
                           <code className="text-sm font-mono">{garment.garmentId}</code>
                         </div>
                       </TableCell>
@@ -451,8 +451,8 @@ function BulkGarmentForm({
               "Generating..."
             ) : (
               <>
-                <QrCode className="w-4 h-4 mr-2" />
-                Generate Garments & QR Codes
+                <Barcode className="w-4 h-4 mr-2" />
+                Generate Garments & Barcodes
               </>
             )}
           </Button>

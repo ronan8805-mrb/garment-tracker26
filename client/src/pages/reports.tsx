@@ -29,7 +29,7 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Filter,
-  QrCode,
+  Barcode,
 } from "lucide-react";
 import type { Factory, ScanBatch } from "@shared/schema";
 
@@ -61,7 +61,7 @@ export default function ReportsPage() {
     window.open(`/api/batches/${batchId}/report`, "_blank");
   };
 
-  const handleDownloadQRCodes = (factoryId: string) => {
+  const handleDownloadBarcodes = (factoryId: string) => {
     window.open(`/api/factories/${factoryId}/qr-codes`, "_blank");
   };
 
@@ -70,7 +70,7 @@ export default function ReportsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Reports</h1>
-          <p className="text-muted-foreground">View and download batch reports and QR codes</p>
+          <p className="text-muted-foreground">View and download batch reports and barcodes</p>
         </div>
       </div>
 
@@ -208,11 +208,11 @@ export default function ReportsPage() {
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">QR Code Downloads</CardTitle>
+              <CardTitle className="text-lg">Barcode Downloads</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground mb-4">
-                Download QR code sheets for all garments assigned to a factory.
+                Download barcode sheets for all garments assigned to a factory.
               </p>
               {factories && factories.length > 0 ? (
                 <div className="space-y-2">
@@ -221,10 +221,10 @@ export default function ReportsPage() {
                       key={factory.id}
                       variant="outline"
                       className="w-full justify-start"
-                      onClick={() => handleDownloadQRCodes(factory.id)}
-                      data-testid={`button-download-qr-${factory.id}`}
+                      onClick={() => handleDownloadBarcodes(factory.id)}
+                      data-testid={`button-download-barcode-${factory.id}`}
                     >
-                      <QrCode className="w-4 h-4 mr-2" />
+                      <Barcode className="w-4 h-4 mr-2" />
                       {factory.name} ({factory.code})
                     </Button>
                   ))}

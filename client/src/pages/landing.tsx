@@ -48,7 +48,7 @@ export default function LandingPage() {
                     <span className="block text-primary">Laundry & Linen Specialists</span>
                   </h1>
                   <p className="text-lg sm:text-xl text-muted-foreground max-w-lg">
-                    QR-code driven track-and-trace solution with digital audit system.
+                    Barcode-driven track-and-trace solution with digital audit system.
                     Fresh, hygienic, and on-time laundry solutions for Ireland's most trusted businesses.
                   </p>
                 </div>
@@ -105,15 +105,15 @@ export default function LandingPage() {
               </h2>
               <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
                 Serving hotels, healthcare facilities, restaurants, hair salons, and industrial factories 
-                with QR label tracking and digital audit systems.
+                with barcode label tracking and digital audit systems.
               </p>
             </div>
 
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               <FeatureCard
                 icon={ScanLine}
-                title="QR Label Tracking"
-                description="Driver app integrated QR scanning system. Track every garment from pickup to delivery with complete traceability."
+                title="Barcode Tracking"
+                description="Driver app integrated barcode scanning system. Track every garment from pickup to delivery with complete traceability."
               />
               <FeatureCard
                 icon={Building2}
