@@ -149,13 +149,13 @@ export default function LandingPage() {
                   <CardContent>
                     <Tabs defaultValue="admin" className="w-full">
                       <TabsList className="grid w-full grid-cols-2">
-                        <TabsTrigger value="admin" data-testid="tab-admin-login">
-                          <Lock className="w-4 h-4 mr-2" />
-                          Admin
-                        </TabsTrigger>
                         <TabsTrigger value="factory" data-testid="tab-factory-login">
                           <Building2 className="w-4 h-4 mr-2" />
                           Factory
+                        </TabsTrigger>
+                        <TabsTrigger value="admin" data-testid="tab-admin-login">
+                          <Lock className="w-4 h-4 mr-2" />
+                          Admin
                         </TabsTrigger>
                       </TabsList>
                       <TabsContent value="admin" className="mt-4">
