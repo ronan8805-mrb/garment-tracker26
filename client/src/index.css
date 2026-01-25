@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* LIGHT MODE - Industrial/Professional Theme */
+/* LIGHT MODE - Mr Bubbles Express Cyan/Turquoise Theme */
 :root {
   --button-outline: rgba(0,0,0, .10);
   --badge-outline: rgba(0,0,0, .05);
@@ -12,50 +12,50 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  --background: 210 20% 98%;
-  --foreground: 222 47% 11%;
+  --background: 190 40% 97%;
+  --foreground: 210 50% 15%;
 
-  --border: 214 20% 88%;
+  --border: 190 30% 85%;
 
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
-  --card-border: 214 20% 90%;
+  --card-foreground: 210 50% 15%;
+  --card-border: 190 30% 88%;
 
-  --sidebar: 215 25% 27%;
-  --sidebar-foreground: 210 20% 95%;
-  --sidebar-border: 215 25% 22%;
-  --sidebar-primary: 199 89% 48%;
+  --sidebar: 195 85% 45%;
+  --sidebar-foreground: 0 0% 100%;
+  --sidebar-border: 195 85% 38%;
+  --sidebar-primary: 220 50% 45%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 215 25% 32%;
-  --sidebar-accent-foreground: 210 20% 95%;
-  --sidebar-ring: 199 89% 48%;
+  --sidebar-accent: 195 80% 50%;
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-ring: 195 85% 45%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-  --popover-border: 214 20% 90%;
+  --popover-foreground: 210 50% 15%;
+  --popover-border: 190 30% 88%;
 
-  --primary: 199 89% 48%;
+  --primary: 195 85% 45%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 210 20% 94%;
-  --secondary-foreground: 222 47% 11%;
+  --secondary: 190 30% 92%;
+  --secondary-foreground: 210 50% 15%;
 
-  --muted: 210 20% 96%;
-  --muted-foreground: 215 16% 47%;
+  --muted: 190 25% 94%;
+  --muted-foreground: 210 20% 45%;
 
-  --accent: 199 89% 94%;
-  --accent-foreground: 199 89% 32%;
+  --accent: 195 70% 90%;
+  --accent-foreground: 195 85% 35%;
 
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 100%;
 
-  --input: 214 20% 85%;
-  --ring: 199 89% 48%;
+  --input: 190 30% 85%;
+  --ring: 195 85% 45%;
 
-  --chart-1: 199 89% 48%;
+  --chart-1: 195 85% 45%;
   --chart-2: 142 71% 45%;
   --chart-3: 38 92% 50%;
-  --chart-4: 262 83% 58%;
+  --chart-4: 220 50% 45%;
   --chart-5: 0 84% 60%;
 
   --font-sans: 'Inter', sans-serif;
@@ -109,50 +109,50 @@
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  --background: 222 47% 8%;
-  --foreground: 210 20% 95%;
+  --background: 200 50% 8%;
+  --foreground: 190 30% 95%;
 
-  --border: 217 33% 17%;
+  --border: 200 40% 18%;
 
-  --card: 222 47% 11%;
-  --card-foreground: 210 20% 95%;
-  --card-border: 217 33% 17%;
+  --card: 200 45% 12%;
+  --card-foreground: 190 30% 95%;
+  --card-border: 200 40% 18%;
 
-  --sidebar: 222 47% 6%;
-  --sidebar-foreground: 210 20% 95%;
-  --sidebar-border: 217 33% 15%;
-  --sidebar-primary: 199 89% 48%;
+  --sidebar: 200 50% 10%;
+  --sidebar-foreground: 190 30% 95%;
+  --sidebar-border: 200 45% 15%;
+  --sidebar-primary: 195 85% 50%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 217 33% 15%;
-  --sidebar-accent-foreground: 210 20% 95%;
-  --sidebar-ring: 199 89% 48%;
+  --sidebar-accent: 200 45% 18%;
+  --sidebar-accent-foreground: 190 30% 95%;
+  --sidebar-ring: 195 85% 50%;
 
-  --popover: 222 47% 11%;
-  --popover-foreground: 210 20% 95%;
-  --popover-border: 217 33% 17%;
+  --popover: 200 45% 12%;
+  --popover-foreground: 190 30% 95%;
+  --popover-border: 200 40% 18%;
 
-  --primary: 199 89% 48%;
+  --primary: 195 85% 50%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 217 33% 17%;
-  --secondary-foreground: 210 20% 95%;
+  --secondary: 200 40% 18%;
+  --secondary-foreground: 190 30% 95%;
 
-  --muted: 217 33% 15%;
-  --muted-foreground: 215 20% 55%;
+  --muted: 200 40% 15%;
+  --muted-foreground: 195 25% 55%;
 
-  --accent: 199 40% 20%;
-  --accent-foreground: 199 89% 70%;
+  --accent: 195 50% 22%;
+  --accent-foreground: 195 85% 70%;
 
   --destructive: 0 62% 50%;
   --destructive-foreground: 0 0% 100%;
 
-  --input: 217 33% 22%;
-  --ring: 199 89% 48%;
+  --input: 200 40% 22%;
+  --ring: 195 85% 50%;
 
-  --chart-1: 199 89% 48%;
+  --chart-1: 195 85% 50%;
   --chart-2: 142 71% 45%;
   --chart-3: 38 92% 50%;
-  --chart-4: 262 83% 58%;
+  --chart-4: 220 50% 50%;
   --chart-5: 0 62% 50%;
 
   --shadow-2xs: 0px 1px 2px 0px rgba(0,0,0,0.2);
