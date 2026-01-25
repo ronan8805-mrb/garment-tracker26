@@ -231,28 +231,10 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
                 {isAdmin && (
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Location</label>
-                    <Select
-                      value={location}
-                      onValueChange={(v) => setLocation(v as "factory" | "laundry")}
-                    >
-                      <SelectTrigger data-testid="select-location">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="laundry">
-                          <div className="flex items-center gap-2">
-                            <Building2 className="w-4 h-4" />
-                            Laundry
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="factory">
-                          <div className="flex items-center gap-2">
-                            <Factory className="w-4 h-4" />
-                            Factory
-                          </div>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="flex items-center gap-2 h-9 px-3 border rounded-md bg-muted/50">
+                      <Building2 className="w-4 h-4 text-primary" />
+                      <span className="text-sm font-medium">Laundry</span>
+                    </div>
                   </div>
                 )}
 
