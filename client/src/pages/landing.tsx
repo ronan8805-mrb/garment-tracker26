@@ -1,8 +1,67 @@
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Sparkles, ScanLine, FileText, Shield, Zap, Globe, Building2, Stethoscope, Scissors, BadgeCheck } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { Sparkles, ScanLine, FileText, Shield, Zap, Building2, Stethoscope, Scissors, BadgeCheck, Lock, User } from "lucide-react";
+
+const factoryLoginSchema = z.object({
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+});
 
 export default function LandingPage() {
+  const [, setLocation] = useLocation();
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const { toast } = useToast();
+
+  const form = useForm<z.infer<typeof factoryLoginSchema>>({
+    resolver: zodResolver(factoryLoginSchema),
+    defaultValues: {
+      username: "",
+      password: "",
+    },
+  });
+
+  const handleFactoryLogin = async (data: z.infer<typeof factoryLoginSchema>) => {
+    setIsLoggingIn(true);
+    try {
+      await apiRequest("POST", "/api/factory/login", data);
+      toast({
+        title: "Login successful",
+        description: "Redirecting to dashboard...",
+      });
+      setLocation("/factory");
+    } catch (error: any) {
+      toast({
+        title: "Login failed",
+        description: error.message || "Invalid username or password",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-background/80 border-b">
@@ -19,14 +78,14 @@ export default function LandingPage() {
             </div>
             <div className="flex items-center gap-4">
               <a
-                href="/api/login"
+                href="#login"
                 className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
                 data-testid="link-login-nav"
               >
                 Sign In
               </a>
               <Button asChild data-testid="button-get-started-nav">
-                <a href="/api/login">Get Started</a>
+                <a href="#login">Get Started</a>
               </Button>
             </div>
           </div>
@@ -55,7 +114,7 @@ export default function LandingPage() {
 
                 <div className="flex flex-wrap gap-4">
                   <Button size="lg" asChild data-testid="button-get-started-hero">
-                    <a href="/api/login">
+                    <a href="#login">
                       <ScanLine className="w-5 h-5 mr-2" />
                       Start Tracking
                     </a>
@@ -81,17 +140,99 @@ export default function LandingPage() {
                 </div>
               </div>
 
-              <div className="relative">
-                <div className="bg-gradient-to-br from-primary/20 via-primary/10 to-transparent rounded-2xl p-8 border">
-                  <div className="grid grid-cols-2 gap-4">
-                    <StatCard label="Garments Tracked" value="10K+" icon={Sparkles} />
-                    <StatCard label="Clients Served" value="100+" icon={Building2} />
-                    <StatCard label="Scans/Day" value="5K+" icon={ScanLine} />
-                    <StatCard label="Uptime" value="99.9%" icon={Zap} />
-                  </div>
-                </div>
-                <div className="absolute -top-4 -right-4 w-24 h-24 bg-primary/10 rounded-full blur-2xl" />
-                <div className="absolute -bottom-4 -left-4 w-32 h-32 bg-primary/10 rounded-full blur-2xl" />
+              <div className="relative" id="login">
+                <Card className="border-2">
+                  <CardHeader className="text-center pb-2">
+                    <CardTitle className="text-xl">Sign In to LaundryTrack</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Tabs defaultValue="factory" className="w-full">
+                      <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="factory" data-testid="tab-factory-login">
+                          <Building2 className="w-4 h-4 mr-2" />
+                          Factory
+                        </TabsTrigger>
+                        <TabsTrigger value="admin" data-testid="tab-admin-login">
+                          <Lock className="w-4 h-4 mr-2" />
+                          Admin
+                        </TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="factory" className="mt-4">
+                        <Form {...form}>
+                          <form onSubmit={form.handleSubmit(handleFactoryLogin)} className="space-y-4">
+                            <FormField
+                              control={form.control}
+                              name="username"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Username</FormLabel>
+                                  <FormControl>
+                                    <div className="relative">
+                                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                      <Input
+                                        placeholder="Enter your username"
+                                        className="pl-9"
+                                        {...field}
+                                        data-testid="input-factory-username"
+                                      />
+                                    </div>
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={form.control}
+                              name="password"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Password</FormLabel>
+                                  <FormControl>
+                                    <div className="relative">
+                                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                      <Input
+                                        type="password"
+                                        placeholder="Enter your password"
+                                        className="pl-9"
+                                        {...field}
+                                        data-testid="input-factory-password"
+                                      />
+                                    </div>
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <Button
+                              type="submit"
+                              className="w-full"
+                              disabled={isLoggingIn}
+                              data-testid="button-factory-login"
+                            >
+                              {isLoggingIn ? "Signing in..." : "Sign In as Factory"}
+                            </Button>
+                          </form>
+                        </Form>
+                        <p className="text-xs text-muted-foreground text-center mt-4">
+                          Use the credentials provided by your laundry administrator
+                        </p>
+                      </TabsContent>
+                      <TabsContent value="admin" className="mt-4 space-y-4">
+                        <p className="text-sm text-muted-foreground text-center">
+                          Admin access is for Mr Bubbles Express staff only
+                        </p>
+                        <Button asChild className="w-full" data-testid="button-admin-login">
+                          <a href="/api/login">
+                            <Sparkles className="w-4 h-4 mr-2" />
+                            Sign In with Replit
+                          </a>
+                        </Button>
+                      </TabsContent>
+                    </Tabs>
+                  </CardContent>
+                </Card>
+                <div className="absolute -top-4 -right-4 w-24 h-24 bg-primary/10 rounded-full blur-2xl -z-10" />
+                <div className="absolute -bottom-4 -left-4 w-32 h-32 bg-primary/10 rounded-full blur-2xl -z-10" />
               </div>
             </div>
           </div>
@@ -154,7 +295,7 @@ export default function LandingPage() {
               laundry solutions from Mr Bubbles Express.
             </p>
             <Button size="lg" asChild data-testid="button-get-started-cta">
-              <a href="/api/login">
+              <a href="#login">
                 Get Started Now
               </a>
             </Button>
