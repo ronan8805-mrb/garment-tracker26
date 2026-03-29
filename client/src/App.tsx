@@ -1,5 +1,5 @@
+import { useEffect } from "react";
 import { Switch, Route } from "wouter";
-import { useQuery } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -9,7 +9,6 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { useAuth } from "@/hooks/use-auth";
-import { Skeleton } from "@/components/ui/skeleton";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
 import AdminDashboard from "@/pages/admin-dashboard";
@@ -18,7 +17,7 @@ import FactoriesPage from "@/pages/factories";
 import GarmentsPage from "@/pages/garments";
 import ScanPage from "@/pages/scan";
 import ReportsPage from "@/pages/reports";
-import type { UserProfile } from "@shared/schema";
+import { initWebSocket, closeWebSocket } from "@/lib/websocket";
 
 function AuthenticatedLayout({ children, isFactorySession, isAdminSession }: { children: React.ReactNode; isFactorySession?: boolean; isAdminSession?: boolean }) {
   const style = {
@@ -79,6 +78,13 @@ function AuthenticatedRouter({ isFactorySession, isAdminSession }: { isFactorySe
 
 function Router() {
   const { isLoading, isAuthenticated, isFactorySession, isAdminSession } = useAuth();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      initWebSocket();
+      return () => closeWebSocket();
+    }
+  }, [isAuthenticated]);
 
   if (isLoading) {
     return (

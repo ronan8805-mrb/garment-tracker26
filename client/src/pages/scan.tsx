@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useLocation, useSearch } from "wouter";
+import { useSearch } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queueScan, getPendingCount, syncPendingScans } from "@/lib/offline-queue";
+import { beepScan, beepDuplicate, beepError } from "@/lib/beep";
 import {
   ScanLine,
   Check,
@@ -37,8 +39,10 @@ import {
   FileText,
   Trash2,
   Building2,
-  Factory,
   Bluetooth,
+  Wifi,
+  WifiOff,
+  CloudUpload,
 } from "lucide-react";
 import type { Factory as FactoryType, Garment, UserProfile } from "@shared/schema";
 
@@ -71,10 +75,28 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
   const [scanInput, setScanInput] = useState("");
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [batchId, setBatchId] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [pendingCount, setPendingCount] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   const isAdmin = userProfile?.role === "admin";
+
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    const interval = setInterval(async () => {
+      setPendingCount(await getPendingCount());
+    }, 5000);
+    getPendingCount().then(setPendingCount);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+      clearInterval(interval);
+    };
+  }, []);
 
   const { data: factories } = useQuery<FactoryType[]>({
     queryKey: ["/api/factories"],
@@ -83,6 +105,11 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
 
   const scanMutation = useMutation({
     mutationFn: async (garmentCode: string) => {
+      if (!navigator.onLine) {
+        const queued = await queueScan(garmentCode, location, direction);
+        setPendingCount(await getPendingCount());
+        return { garmentId: garmentCode, queued: true, clientScanId: queued.clientScanId };
+      }
       return apiRequest("POST", "/api/scan", {
         garmentId: garmentCode,
         location,
@@ -95,11 +122,11 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
         garmentId: response.garmentId,
         garment: response.garment,
         status: "success",
-        message: `Scanned ${direction} at ${location}`,
+        message: response.queued ? `Queued offline (${direction} at ${location})` : `Scanned ${direction} at ${location}`,
         timestamp: new Date(),
       };
       setScannedItems((prev) => [newItem, ...prev]);
-      
+
       const element = document.getElementById("scan-list");
       if (element) {
         element.classList.add("success-flash");
@@ -107,18 +134,24 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
       }
     },
     onError: (error: any) => {
+      const isDup = error.message?.includes("duplicate");
+      if (isDup) {
+        beepDuplicate();
+      } else {
+        beepError();
+      }
       const newItem: ScannedItem = {
         garmentId: scanInput,
-        status: error.message?.includes("duplicate") ? "warning" : "error",
+        status: isDup ? "warning" : "error",
         message: error.message || "Scan failed",
         timestamp: new Date(),
       };
       setScannedItems((prev) => [newItem, ...prev]);
-      
+
       toast({
-        title: error.message?.includes("duplicate") ? "Duplicate Scan" : "Scan Error",
+        title: isDup ? "Duplicate Scan" : "Scan Error",
         description: error.message,
-        variant: error.message?.includes("duplicate") ? "default" : "destructive",
+        variant: isDup ? "default" : "destructive",
       });
     },
   });
@@ -162,12 +195,14 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
 
   const handleScan = useCallback((code: string) => {
     if (!code.trim()) return;
-    
+    void beepScan();
+
     const isDuplicate = scannedItems.some(
       (item) => item.garmentId === code && item.status === "success"
     );
     
     if (isDuplicate) {
+      beepDuplicate();
       const newItem: ScannedItem = {
         garmentId: code,
         status: "warning",
@@ -216,6 +251,18 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
         <div>
           <h1 className="text-2xl font-bold">Scanning</h1>
           <p className="text-muted-foreground">Scan garments to record movement</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {pendingCount > 0 && (
+            <Badge variant="secondary" className="flex items-center gap-1">
+              <CloudUpload className="w-3 h-3" />
+              {pendingCount} queued
+            </Badge>
+          )}
+          <Badge variant={isOnline ? "default" : "destructive"} className="flex items-center gap-1">
+            {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+            {isOnline ? "Online" : "Offline"}
+          </Badge>
         </div>
       </div>
 

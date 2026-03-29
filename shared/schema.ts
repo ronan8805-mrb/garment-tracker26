@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, boolean, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, boolean, pgEnum, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -43,7 +43,10 @@ export const garments = pgTable("garments", {
   size: varchar("size", { length: 10 }).notNull(),
   status: garmentStatusEnum("status").notNull().default("at_factory"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_garments_factory_id").on(table.factoryId),
+  index("idx_garments_status").on(table.status),
+]);
 
 // Scan events table (immutable log)
 export const scanEvents = pgTable("scan_events", {
@@ -53,8 +56,13 @@ export const scanEvents = pgTable("scan_events", {
   direction: scanDirectionEnum("direction").notNull(),
   userId: varchar("user_id").notNull(),
   batchId: varchar("batch_id"),
+  clientScanId: varchar("client_scan_id", { length: 64 }),
   scannedAt: timestamp("scanned_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_scan_events_garment_id").on(table.garmentId),
+  index("idx_scan_events_batch_id").on(table.batchId),
+  index("idx_scan_events_scanned_at").on(table.scannedAt),
+]);
 
 // Scan batches table
 export const scanBatches = pgTable("scan_batches", {
@@ -67,7 +75,10 @@ export const scanBatches = pgTable("scan_batches", {
   totalItems: integer("total_items").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow(),
   completedAt: timestamp("completed_at"),
-});
+}, (table) => [
+  index("idx_scan_batches_factory_id").on(table.factoryId),
+  index("idx_scan_batches_created_at").on(table.createdAt),
+]);
 
 // Relations
 export const factoriesRelations = relations(factories, ({ many }) => ({

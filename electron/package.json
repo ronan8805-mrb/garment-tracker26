@@ -1,0 +1,41 @@
+{
+  "name": "laundrytrack-desktop",
+  "version": "1.0.0",
+  "description": "LaundryTrack - Mr Bubbles Express Garment Tracking System",
+  "main": "main.js",
+  "author": "Mr Bubbles Express",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.mrbubblesexpress.laundrytrack",
+    "productName": "LaundryTrack",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "LaundryTrack"
+    },
+    "files": [
+      "main.js",
+      "preload.js"
+    ]
+  }
+}

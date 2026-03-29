@@ -90,15 +90,15 @@ export default function FactoriesPage() {
   const createMutation = useMutation({
     mutationFn: async (data: FactoryFormData) => {
       const response = await apiRequest("POST", "/api/factories", data);
-      return response;
+      return { factory: response, submittedData: data };
     },
-    onSuccess: (response: any) => {
+    onSuccess: ({ factory, submittedData }: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/factories"] });
       setIsCreateOpen(false);
       setCreatedCredentials({
-        factory: response,
-        username: response.username || "",
-        password: response.password || "",
+        factory,
+        username: submittedData.username,
+        password: submittedData.password,
       });
     },
     onError: (error: Error) => {

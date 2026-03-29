@@ -1,47 +1,45 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
+import { type Server } from "http";
+import rateLimit from "express-rate-limit";
 import { storage } from "./storage";
-import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
-import { insertFactorySchema, bulkGarmentSchema, insertScanEventSchema, insertScanBatchSchema, createFactoryWithCredentialsSchema, factoryLoginSchema } from "@shared/schema";
+import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
+import { bulkGarmentSchema, createFactoryWithCredentialsSchema, factoryLoginSchema } from "@shared/schema";
 import { z } from "zod";
 import PDFDocument from "pdfkit";
 import JsBarcode from "jsbarcode";
 import { createCanvas } from "canvas";
 import bcrypt from "bcryptjs";
+import type { BroadcastFn } from "./websocket";
+
+function stripPasswordHash(obj: any) {
+  if (!obj) return obj;
+  const { passwordHash, ...rest } = obj;
+  return rest;
+}
 
 export async function registerRoutes(
   httpServer: Server,
-  app: Express
+  app: Express,
+  broadcast: BroadcastFn
 ): Promise<Server> {
-  // Setup authentication
   await setupAuth(app);
   registerAuthRoutes(app);
 
-  // Helper middleware to check if user is admin (via Replit Auth)
-  const requireAdmin = async (req: any, res: any, next: any) => {
-    if (!req.user?.claims?.sub) {
-      return res.status(401).json({ message: "Admin authentication required" });
-    }
-    const userId = req.user.claims.sub;
-    const profile = await storage.getUserProfile(userId);
-    if (profile?.role !== "admin") {
-      return res.status(403).json({ message: "Admin access required" });
-    }
-    next();
-  };
+  const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    message: { message: "Too many login attempts, try again later" },
+  });
 
-  // Combined auth middleware: allows admin session, factory session, or Replit Auth
   const isAuthenticatedOrFactory = async (req: any, res: any, next: any) => {
     const session = req.session as any;
     
-    // Check admin session first
     if (session?.isAdmin) {
       req.isFactorySession = false;
       req.isAdminSession = true;
       return next();
     }
     
-    // Check factory session
     if (session?.isFactoryUser && session?.factoryId) {
       req.isFactorySession = true;
       req.isAdminSession = false;
@@ -50,33 +48,17 @@ export async function registerRoutes(
       return next();
     }
     
-    // Fall back to Replit Auth
-    if (req.user?.claims?.sub) {
-      req.isFactorySession = false;
-      req.isAdminSession = false;
-      return next();
-    }
-    
     return res.status(401).json({ message: "Authentication required" });
   };
 
-  // Factory-only middleware (for factory session users)
-  const requireFactorySession = (req: any, res: any, next: any) => {
-    const session = req.session as any;
-    if (session?.isFactoryUser && session?.factoryId) {
-      req.factoryId = session.factoryId;
-      req.factoryName = session.factoryName;
-      return next();
-    }
-    return res.status(401).json({ message: "Factory authentication required" });
-  };
+  const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
+  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
-  // Admin credentials (hardcoded for now)
-  const ADMIN_USERNAME = "sonny1994";
-  const ADMIN_PASSWORD = "sonny1994";
+  if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
+    console.warn("WARNING: ADMIN_USERNAME and ADMIN_PASSWORD must be set via environment variables");
+  }
 
-  // Login endpoint (username/password authentication for both admin and factory)
-  app.post("/api/factory/login", async (req, res) => {
+  app.post("/api/factory/login", loginLimiter, async (req, res) => {
     try {
       const validatedData = factoryLoginSchema.parse(req.body);
       
@@ -166,54 +148,17 @@ export async function registerRoutes(
     res.json({ isLoggedIn: false });
   });
 
-  // User profile routes
-  app.get("/api/user/profile", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      let profile = await storage.getUserProfile(userId);
-      
-      // For MVP: Create default admin profile only if no profiles exist in system (first user)
-      // This makes the first user the admin, subsequent users need to be assigned roles
-      if (!profile) {
-        const allProfiles = await storage.getAllUserProfiles();
-        const isFirstUser = allProfiles.length === 0;
-        
-        profile = await storage.createUserProfile({
-          userId,
-          role: isFirstUser ? "admin" : "factory",
-          factoryId: null,
-        });
-      }
-      
-      res.json(profile);
-    } catch (error) {
-      console.error("Error fetching user profile:", error);
-      res.status(500).json({ message: "Failed to fetch user profile" });
-    }
-  });
-
   // Dashboard routes
   app.get("/api/dashboard/admin", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      // Check if admin session
-      if (req.isAdminSession) {
-        const stats = await storage.getAdminDashboardStats();
-        return res.json(stats);
-      }
-      
-      // Fallback to Replit Auth
-      const userId = req.user?.claims?.sub;
-      if (!userId) {
+      if (!req.isAdminSession) {
         return res.status(403).json({ message: "Access denied" });
       }
-      const profile = await storage.getUserProfile(userId);
-      
-      if (profile?.role !== "admin") {
-        return res.status(403).json({ message: "Access denied" });
-      }
-      
       const stats = await storage.getAdminDashboardStats();
-      res.json(stats);
+      res.json({
+        ...stats,
+        recentFactories: stats.recentFactories.map(stripPasswordHash),
+      });
     } catch (error) {
       console.error("Error fetching admin dashboard:", error);
       res.status(500).json({ message: "Failed to fetch dashboard data" });
@@ -224,20 +169,12 @@ export async function registerRoutes(
     try {
       let factoryId: string | null = null;
       
-      // Factory session login (username/password)
       if (req.isFactorySession) {
         factoryId = req.factoryId;
       } else if (req.isAdminSession) {
-        // Admin session - return empty factory dashboard (admins use admin dashboard)
         return res.status(400).json({ message: "Admins should use admin dashboard" });
       } else {
-        // Replit Auth login - check user profile
-        const userId = req.user?.claims?.sub;
-        if (!userId) {
-          return res.status(400).json({ message: "No factory assigned" });
-        }
-        const profile = await storage.getUserProfile(userId);
-        factoryId = profile?.factoryId || null;
+        return res.status(400).json({ message: "No factory assigned" });
       }
       
       if (!factoryId) {
@@ -256,30 +193,13 @@ export async function registerRoutes(
   app.get("/api/factories", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
       if (req.isAdminSession) {
-        // Admin session login - see all factories
         const factories = await storage.getFactories();
-        res.json(factories);
+        res.json(factories.map(stripPasswordHash));
       } else if (req.isFactorySession) {
-        // Factory session login - only see their own factory
         const factory = await storage.getFactory(req.factoryId);
-        res.json(factory ? [factory] : []);
+        res.json(factory ? [stripPasswordHash(factory)] : []);
       } else {
-        // Replit Auth login (fallback)
-        const userId = req.user?.claims?.sub;
-        if (!userId) {
-          return res.json([]);
-        }
-        const profile = await storage.getUserProfile(userId);
-        
-        if (profile?.role === "admin") {
-          const factories = await storage.getFactories();
-          res.json(factories);
-        } else if (profile?.factoryId) {
-          const factory = await storage.getFactory(profile.factoryId);
-          res.json(factory ? [factory] : []);
-        } else {
-          res.json([]);
-        }
+        res.json([]);
       }
     } catch (error) {
       console.error("Error fetching factories:", error);
@@ -294,24 +214,20 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Factory not found" });
       }
       
-      // Factory session users can only see their own factory
       if (req.isFactorySession && factory.id !== req.factoryId) {
         return res.status(403).json({ message: "Access denied" });
       }
       
-      res.json(factory);
+      res.json(stripPasswordHash(factory));
     } catch (error) {
       console.error("Error fetching factory:", error);
       res.status(500).json({ message: "Failed to fetch factory" });
     }
   });
 
-  app.post("/api/factories", isAuthenticated, async (req: any, res) => {
+  app.post("/api/factories", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const profile = await storage.getUserProfile(userId);
-      
-      if (profile?.role !== "admin") {
+      if (!req.isAdminSession) {
         return res.status(403).json({ message: "Only admins can create factories" });
       }
 
@@ -340,10 +256,9 @@ export async function registerRoutes(
         passwordHash,
       });
       
-      // Return factory with the original password (so admin can share it)
       res.status(201).json({
         ...factory,
-        password: validatedData.password, // Include password for admin to share
+        passwordHash: undefined,
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -356,21 +271,11 @@ export async function registerRoutes(
 
   app.patch("/api/factories/:id", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      // Only allow admin sessions to update factories
       if (!req.isAdminSession) {
-        const userId = req.user?.claims?.sub;
-        if (!userId) {
-          return res.status(403).json({ message: "Only admins can update factories" });
-        }
-        const profile = await storage.getUserProfile(userId);
-        if (profile?.role !== "admin") {
-          return res.status(403).json({ message: "Only admins can update factories" });
-        }
+        return res.status(403).json({ message: "Only admins can update factories" });
       }
 
       const { password, ...otherData } = req.body;
-      
-      // If password is provided and not empty, hash it
       const updateData: any = { ...otherData };
       if (password && password.trim() !== "") {
         updateData.passwordHash = await bcrypt.hash(password, 10);
@@ -380,7 +285,7 @@ export async function registerRoutes(
       if (!factory) {
         return res.status(404).json({ message: "Factory not found" });
       }
-      res.json(factory);
+      res.json(stripPasswordHash(factory));
     } catch (error) {
       console.error("Error updating factory:", error);
       res.status(500).json({ message: "Failed to update factory" });
@@ -393,18 +298,9 @@ export async function registerRoutes(
       let factoryId: string | undefined;
       
       if (req.isAdminSession) {
-        // Admin session login - can filter by factory or see all
         factoryId = req.query.factory as string | undefined;
       } else if (req.isFactorySession) {
-        // Factory session login - only see their own garments
         factoryId = req.factoryId;
-      } else {
-        // Replit Auth login (fallback)
-        const userId = req.user?.claims?.sub;
-        if (userId) {
-          const profile = await storage.getUserProfile(userId);
-          factoryId = profile?.role === "factory" ? profile.factoryId || undefined : (req.query.factory as string | undefined);
-        }
       }
       
       const garments = await storage.getGarments(factoryId);
@@ -417,17 +313,8 @@ export async function registerRoutes(
 
   app.post("/api/garments/bulk", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      // Only allow admin sessions to create garments
       if (!req.isAdminSession) {
-        // Check Replit Auth fallback
-        const userId = req.user?.claims?.sub;
-        if (!userId) {
-          return res.status(403).json({ message: "Only admins can create garments" });
-        }
-        const profile = await storage.getUserProfile(userId);
-        if (profile?.role !== "admin") {
-          return res.status(403).json({ message: "Only admins can create garments" });
-        }
+        return res.status(403).json({ message: "Only admins can create garments" });
       }
 
       const validatedData = bulkGarmentSchema.parse(req.body);
@@ -440,14 +327,15 @@ export async function registerRoutes(
 
       // Generate garment IDs and create records
       const garmentsToCreate = [];
-      let counter = Date.now() % 1000000; // Use timestamp as base for unique IDs
+      const ts = new Date();
+      const timestamp = `${ts.getFullYear()}${String(ts.getMonth() + 1).padStart(2, "0")}${String(ts.getDate()).padStart(2, "0")}${String(ts.getHours()).padStart(2, "0")}${String(ts.getMinutes()).padStart(2, "0")}${String(ts.getSeconds()).padStart(2, "0")}`;
+      let seq = 1;
       
       for (const item of validatedData.garments) {
-        // Get type abbreviation (first 2 letters uppercase)
         const typeAbbrev = item.garmentType.replace(/\s+/g, "").substring(0, 2).toUpperCase();
         
         for (let i = 0; i < item.quantity; i++) {
-          const garmentId = `${factory.code}-${typeAbbrev}-${item.size}-${String(counter++).padStart(6, "0")}`;
+          const garmentId = `${factory.code}-${typeAbbrev}-${item.size}-${timestamp}-${String(seq++).padStart(3, "0")}`;
           garmentsToCreate.push({
             garmentId,
             factoryId: validatedData.factoryId,
@@ -477,13 +365,19 @@ export async function registerRoutes(
   // Scan routes
   app.post("/api/scan", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      const { garmentId, location, direction } = req.body;
+      const { garmentId, location, direction, clientScanId } = req.body;
 
       if (!garmentId || !location || !direction) {
         return res.status(400).json({ message: "Missing required fields" });
       }
 
-      // Find the garment by its garment ID (the QR code value)
+      if (clientScanId) {
+        const existing = await storage.getScanByClientId(clientScanId);
+        if (existing) {
+          return res.status(200).json({ garmentId, duplicate: true });
+        }
+      }
+
       const garment = await storage.getGarmentByGarmentId(garmentId);
       if (!garment) {
         return res.status(404).json({ message: "Unknown garment: " + garmentId });
@@ -493,16 +387,12 @@ export async function registerRoutes(
       let userFactoryId: string | null = null;
       
       if (req.isFactorySession) {
-        // Factory session login
         userId = `factory:${req.factoryId}`;
         userFactoryId = req.factoryId;
+      } else if (req.isAdminSession) {
+        userId = "admin";
       } else {
-        // Replit Auth login
-        userId = req.user.claims.sub;
-        const profile = await storage.getUserProfile(userId);
-        if (profile?.role === "factory") {
-          userFactoryId = profile.factoryId;
-        }
+        return res.status(401).json({ message: "Authentication required" });
       }
 
       // Validate factory access for factory users
@@ -510,20 +400,25 @@ export async function registerRoutes(
         return res.status(403).json({ message: "This garment belongs to another factory" });
       }
 
-      // Create scan event
       const scanEvent = await storage.createScanEvent({
         garmentId: garment.id,
         location,
         direction,
         userId,
         batchId: null,
+        clientScanId: clientScanId || null,
       });
 
-      // Update garment status only for IN scans
       if (direction === "IN") {
         const newStatus = location === "factory" ? "at_factory" : "at_laundry";
         await storage.updateGarmentStatus(garment.id, newStatus);
+      } else {
+        // OUT at factory → heading to laundry; OUT at laundry → heading to factory
+        const newStatus = location === "factory" ? "at_laundry" : "at_factory";
+        await storage.updateGarmentStatus(garment.id, newStatus);
       }
+
+      broadcast("scan", { garmentId, direction, location });
 
       res.json({
         garmentId,
@@ -542,18 +437,9 @@ export async function registerRoutes(
       let factoryId: string | undefined;
       
       if (req.isAdminSession) {
-        // Admin session login - see all batches
         factoryId = undefined;
       } else if (req.isFactorySession) {
-        // Factory session login - only see their own batches
         factoryId = req.factoryId;
-      } else {
-        // Replit Auth login (fallback)
-        const userId = req.user?.claims?.sub;
-        if (userId) {
-          const profile = await storage.getUserProfile(userId);
-          factoryId = profile?.role === "factory" ? profile.factoryId || undefined : undefined;
-        }
       }
       
       const batches = await storage.getBatches(factoryId);
@@ -576,22 +462,13 @@ export async function registerRoutes(
       let userFactoryId: string | null = null;
       
       if (req.isAdminSession) {
-        // Admin session login
         userId = "admin";
         userFactoryId = null;
       } else if (req.isFactorySession) {
-        // Factory session login
         userId = `factory:${req.factoryId}`;
         userFactoryId = req.factoryId;
       } else {
-        // Replit Auth login (fallback)
-        userId = req.user?.claims?.sub || "unknown";
-        if (req.user?.claims?.sub) {
-          const profile = await storage.getUserProfile(userId);
-          if (profile?.role === "factory") {
-            userFactoryId = profile.factoryId;
-          }
-        }
+        return res.status(401).json({ message: "Authentication required" });
       }
 
       // Validate factory access for factory users
@@ -599,47 +476,30 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Cannot create batch for another factory" });
       }
 
-      // Generate batch number
       const batchNumber = `BATCH-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
-      // Create the batch
-      const batch = await storage.createBatch({
-        batchNumber,
-        factoryId,
+      const completedBatch = await storage.createBatchWithScans({
+        batchData: {
+          batchNumber,
+          factoryId,
+          location,
+          direction,
+          userId,
+          totalItems: garmentIds.length,
+        },
+        garmentIds,
         location,
         direction,
         userId,
-        totalItems: garmentIds.length,
       });
 
-      // Create scan events for all garments in the batch
-      for (const garmentId of garmentIds) {
-        const garment = await storage.getGarmentByGarmentId(garmentId);
-        if (garment) {
-          await storage.createScanEvent({
-            garmentId: garment.id,
-            location,
-            direction,
-            userId,
-            batchId: batch.id,
-          });
-
-          // Update status for IN scans
-          if (direction === "IN") {
-            const newStatus = location === "factory" ? "at_factory" : "at_laundry";
-            await storage.updateGarmentStatus(garment.id, newStatus);
-          }
-        }
-      }
-
-      // Complete the batch
-      const completedBatch = await storage.completeBatch(batch.id, garmentIds.length);
+      broadcast("batch_complete", { batchNumber, totalItems: completedBatch.totalItems, factoryId, direction });
 
       res.status(201).json({
-        batchId: batch.id,
+        batchId: completedBatch.id,
         batchNumber,
-        totalItems: garmentIds.length,
-        reportUrl: generateReport ? `/api/batches/${batch.id}/report` : null,
+        totalItems: completedBatch.totalItems,
+        reportUrl: generateReport ? `/api/batches/${completedBatch.id}/report` : null,
       });
     } catch (error) {
       console.error("Error creating batch:", error);
@@ -704,51 +564,74 @@ export async function registerRoutes(
       
       doc.moveDown(1.5);
 
-      // Scanned Items Table with Timestamps
       if (scanEventsData.length > 0) {
+        const seenGarments = new Set<string>();
+        const duplicateGarments = new Set<string>();
+        for (const ev of scanEventsData) {
+          if (seenGarments.has(ev.garmentId)) {
+            duplicateGarments.add(ev.garmentId);
+          }
+          seenGarments.add(ev.garmentId);
+        }
+
         doc.fontSize(12).font("Helvetica-Bold").text("Scanned Items");
+        if (duplicateGarments.size > 0) {
+          doc.fontSize(10).fillColor("#cc0000").font("Helvetica-Bold")
+            .text(`WARNING: ${duplicateGarments.size} duplicate garment(s) detected`, { align: "left" });
+          doc.fillColor("#000");
+        }
         doc.moveDown(0.5);
         
-        // Table header
         const tableTop = doc.y;
-        const col1 = 50;  // #
-        const col2 = 80;  // Garment ID
-        const col3 = 280; // Type/Size
-        const col4 = 380; // Timestamp
+        const col1 = 50;
+        const col2 = 80;
+        const col3 = 250;
+        const col4 = 360;
+        const col5 = 470;
         
         doc.fontSize(10).font("Helvetica-Bold");
         doc.text("#", col1, tableTop);
         doc.text("Garment ID", col2, tableTop);
         doc.text("Type / Size", col3, tableTop);
         doc.text("Scan Time", col4, tableTop);
+        doc.text("Flag", col5, tableTop);
         
         doc.moveDown(0.3);
         doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
         doc.moveDown(0.3);
 
-        // Table rows
         doc.font("Helvetica").fontSize(9);
         let rowY = doc.y;
         const lineHeight = 14;
+        const seenInRows = new Set<string>();
         
         for (let i = 0; i < scanEventsData.length; i++) {
           const event = scanEventsData[i];
           
-          // Check if we need a new page
           if (rowY > doc.page.height - 100) {
             doc.addPage();
             rowY = 50;
           }
           
-          // Get garment details
-          const garment = await storage.getGarmentByGarmentId(event.garmentId);
+          const garment = await storage.getGarment(event.garmentId);
+          const displayId = garment?.garmentId || event.garmentId;
           const typeSize = garment ? `${garment.garmentType} / ${garment.size}` : "-";
           const scanTime = event.scannedAt ? new Date(event.scannedAt).toLocaleString() : "-";
+          const isDup = seenInRows.has(event.garmentId);
+          seenInRows.add(event.garmentId);
           
+          if (isDup) {
+            doc.fillColor("#cc0000");
+          }
           doc.text(String(i + 1), col1, rowY);
-          doc.text(event.garmentId, col2, rowY);
+          doc.text(displayId, col2, rowY);
           doc.text(typeSize, col3, rowY);
           doc.text(scanTime, col4, rowY);
+          if (isDup) {
+            doc.font("Helvetica-Bold").text("DUPLICATE", col5, rowY);
+            doc.font("Helvetica");
+          }
+          doc.fillColor("#000");
           
           rowY += lineHeight;
         }
@@ -770,18 +653,196 @@ export async function registerRoutes(
     }
   });
 
+  // Scan dates (grouped by day)
+  app.get("/api/scan-dates", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      let factoryId: string | undefined;
+
+      if (req.isAdminSession) {
+        factoryId = req.query.factory as string | undefined;
+      } else if (req.isFactorySession) {
+        factoryId = req.factoryId;
+      }
+
+      const dates = await storage.getScanDates(factoryId);
+      res.json(dates);
+    } catch (error) {
+      console.error("Error fetching scan dates:", error);
+      res.status(500).json({ message: "Failed to fetch scan dates" });
+    }
+  });
+
+  // PDF report for a specific date
+  app.get("/api/scan-dates/:date/report", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      const date = req.params.date as string;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ message: "Invalid date format. Use YYYY-MM-DD" });
+      }
+
+      let factoryId: string | undefined;
+      if (req.isAdminSession) {
+        factoryId = req.query.factory as string | undefined;
+      } else if (req.isFactorySession) {
+        factoryId = req.factoryId;
+      }
+
+      const scanEventsData = await storage.getScanEventsByDate(date, factoryId);
+
+      const factoryName = factoryId
+        ? (await storage.getFactory(factoryId))?.name || "Unknown"
+        : "All Factories";
+
+      const displayDate = new Date(date + "T12:00:00").toLocaleDateString("en-GB", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+
+      const doc = new PDFDocument({ size: "A4", margin: 50 });
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="Scan_Report_${date}.pdf"`
+      );
+
+      doc.pipe(res);
+
+      // Header
+      doc.fontSize(24).font("Helvetica-Bold").text("Mr Bubbles Express", { align: "center" });
+      doc.fontSize(10).font("Helvetica").text("Laundry & Linen Specialist", { align: "center" });
+      doc.moveDown(0.5);
+      doc.fontSize(8).fillColor("#666").text("ISO 9001 & ISO 45001 Certified | Drogheda, Co. Louth", { align: "center" });
+      doc.fillColor("#000");
+      doc.moveDown(2);
+
+      doc.fontSize(18).font("Helvetica-Bold").text("DAILY SCAN REPORT", { align: "center" });
+      doc.moveDown(1);
+
+      doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
+      doc.moveDown(1);
+
+      doc.fontSize(12).font("Helvetica-Bold").text("Report Details");
+      doc.moveDown(0.5);
+      doc.fontSize(11).font("Helvetica");
+      doc.text("Date: ", { continued: true }).font("Helvetica-Bold").text(displayDate);
+      doc.font("Helvetica").text("Factory: ", { continued: true }).font("Helvetica-Bold").text(factoryName);
+      doc.font("Helvetica").text("Total Scans: ", { continued: true }).font("Helvetica-Bold").text(String(scanEventsData.length));
+      doc.moveDown(1);
+
+      // Count IN vs OUT
+      const inCount = scanEventsData.filter((e) => e.direction === "IN").length;
+      const outCount = scanEventsData.filter((e) => e.direction === "OUT").length;
+      doc.font("Helvetica").text("Scanned IN: ", { continued: true }).font("Helvetica-Bold").text(String(inCount));
+      doc.font("Helvetica").text("Scanned OUT: ", { continued: true }).font("Helvetica-Bold").text(String(outCount));
+      doc.moveDown(1.5);
+
+      if (scanEventsData.length > 0) {
+        const seenGarments = new Set<string>();
+        const duplicateGarments = new Set<string>();
+        for (const ev of scanEventsData) {
+          if (seenGarments.has(ev.garmentId)) {
+            duplicateGarments.add(ev.garmentId);
+          }
+          seenGarments.add(ev.garmentId);
+        }
+
+        doc.fontSize(12).font("Helvetica-Bold").text("Scanned Items");
+        if (duplicateGarments.size > 0) {
+          doc.fontSize(10).fillColor("#cc0000").font("Helvetica-Bold")
+            .text(`WARNING: ${duplicateGarments.size} duplicate garment(s) detected`, { align: "left" });
+          doc.fillColor("#000");
+        }
+        doc.moveDown(0.5);
+
+        const tableTop = doc.y;
+        const col1 = 50;
+        const col2 = 68;
+        const col3 = 200;
+        const col4 = 290;
+        const col5 = 340;
+        const col6 = 400;
+        const col7 = 470;
+
+        doc.fontSize(8).font("Helvetica-Bold");
+        doc.text("#", col1, tableTop);
+        doc.text("Garment ID", col2, tableTop);
+        doc.text("Type / Size", col3, tableTop);
+        doc.text("Dir", col4, tableTop);
+        doc.text("Location", col5, tableTop);
+        doc.text("Time", col6, tableTop);
+        doc.text("Flag", col7, tableTop);
+
+        doc.moveDown(0.3);
+        doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
+        doc.moveDown(0.3);
+
+        doc.font("Helvetica").fontSize(7);
+        let rowY = doc.y;
+        const lineHeight = 12;
+        const seenInRows = new Set<string>();
+
+        for (let i = 0; i < scanEventsData.length; i++) {
+          const event = scanEventsData[i];
+
+          if (rowY > doc.page.height - 80) {
+            doc.addPage();
+            rowY = 50;
+          }
+
+          const garment = await storage.getGarment(event.garmentId);
+          const displayId = garment?.garmentId || event.garmentId;
+          const typeSize = garment ? `${garment.garmentType} / ${garment.size}` : "-";
+          const scanTime = event.scannedAt
+            ? new Date(event.scannedAt).toLocaleTimeString()
+            : "-";
+          const isDup = seenInRows.has(event.garmentId);
+          seenInRows.add(event.garmentId);
+
+          if (isDup) {
+            doc.fillColor("#cc0000");
+          }
+          doc.text(String(i + 1), col1, rowY);
+          doc.text(displayId, col2, rowY);
+          doc.text(typeSize, col3, rowY);
+          doc.text(event.direction, col4, rowY);
+          doc.text(event.location, col5, rowY);
+          doc.text(scanTime, col6, rowY);
+          if (isDup) {
+            doc.font("Helvetica-Bold").text("DUPLICATE", col7, rowY);
+            doc.font("Helvetica");
+          }
+          doc.fillColor("#000");
+
+          rowY += lineHeight;
+        }
+
+        doc.y = rowY;
+        doc.moveDown(1);
+      } else {
+        doc.fontSize(11).font("Helvetica").text("No scans recorded on this date.", { align: "center" });
+        doc.moveDown(1);
+      }
+
+      // Footer
+      doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
+      doc.moveDown(0.5);
+      doc.fontSize(9).fillColor("#666").text(`Generated: ${new Date().toLocaleString()}`, { align: "center" });
+      doc.text("Mr Bubbles Express | 086 270 9299 | info@mrbubblesexpress.com", { align: "center" });
+
+      doc.end();
+    } catch (error) {
+      console.error("Error generating date report:", error);
+      res.status(500).json({ message: "Failed to generate report" });
+    }
+  });
+
   app.get("/api/factories/:id/qr-codes", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      // Only allow admin sessions to download QR codes
       if (!req.isAdminSession) {
-        const userId = req.user?.claims?.sub;
-        if (!userId) {
-          return res.status(403).json({ message: "Only admins can download QR codes" });
-        }
-        const profile = await storage.getUserProfile(userId);
-        if (profile?.role !== "admin") {
-          return res.status(403).json({ message: "Only admins can download QR codes" });
-        }
+        return res.status(403).json({ message: "Only admins can download QR codes" });
       }
 
       const factory = await storage.getFactory(req.params.id);

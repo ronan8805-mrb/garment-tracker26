@@ -64,83 +64,121 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-background/80 border-b">
+    <div className="min-h-screen bg-background" style={{ fontFamily: "'Inter', sans-serif" }}>
+      <nav className="fixed top-0 left-0 right-0 z-50" style={{ background: "transparent", borderBottom: "1px solid rgba(255,255,255,0.15)" }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-9 h-9 rounded-full bg-primary">
-                <Sparkles className="w-5 h-5 text-primary-foreground" />
-              </div>
-              <div className="flex flex-col">
-                <span className="font-bold text-lg leading-tight">Mr Bubbles</span>
-                <span className="text-[10px] text-muted-foreground leading-tight uppercase tracking-wider">Laundry & Linen Specialist</span>
-              </div>
+            <div className="flex items-center">
+              <img
+                src="/mr-bubbles-logo.png"
+                alt="Mr Bubbles Express - Laundry & Linen Specialist"
+                style={{ height: "50px", width: "auto", objectFit: "contain" }}
+              />
             </div>
             <div className="flex items-center gap-4">
               <a
                 href="#login"
-                className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                className="text-sm font-semibold transition-colors"
+                style={{ color: "#fff", textShadow: "0 1px 4px rgba(0,80,120,0.4)" }}
                 data-testid="link-login-nav"
               >
                 Sign In
               </a>
-              <Button asChild data-testid="button-get-started-nav">
-                <a href="#login">Get Started</a>
-              </Button>
+              <a
+                href="#login"
+                data-testid="button-get-started-nav"
+                className="text-sm font-bold px-5 py-2.5 rounded-full transition-all"
+                style={{ background: "#fff", color: "#0078a8", boxShadow: "0 2px 12px rgba(0,0,0,0.2)" }}
+              >
+                Get Started
+              </a>
             </div>
           </div>
         </div>
       </nav>
 
-      <main>
-        <section className="pt-32 pb-20 px-4 sm:px-6 lg:px-8">
-          <div className="max-w-7xl mx-auto">
+      {/* No floating bubbles needed - brochure bg has them */}
+      <style>{`
+        @keyframes bubbleFloat1 {
+          0%, 100% { transform: translateY(0px) scale(1); }
+          50% { transform: translateY(-30px) scale(1.05); }
+        }
+        @keyframes bubbleFloat2 {
+          0%, 100% { transform: translateY(0px) scale(1); }
+          50% { transform: translateY(24px) scale(0.97); }
+        }
+        @keyframes bubbleFloat3 {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-18px); }
+        }
+        .feature-card-hover {
+          transition: transform 0.25s ease, box-shadow 0.25s ease;
+        }
+        .feature-card-hover:hover {
+          transform: translateY(-6px);
+          box-shadow: 0 16px 40px rgba(0,200,220,0.18);
+        }
+      `}</style>
+      <main style={{ position: "relative", zIndex: 1 }}>
+        <section className="px-4 sm:px-6 lg:px-8" style={{ backgroundImage: "url('/mr-bubbles-bg.png')", backgroundSize: "cover", backgroundPosition: "center top", minHeight: "100vh", display: "flex", alignItems: "center", paddingTop: "96px", paddingBottom: "60px" }}>
+          <div className="max-w-7xl mx-auto w-full">
             <div className="grid lg:grid-cols-2 gap-12 items-center">
               <div className="space-y-8">
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                  <div className="inline-flex items-center gap-2 text-sm font-bold px-3 py-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.25)", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", backdropFilter: "blur(8px)" }}>
                     <BadgeCheck className="w-4 h-4" />
-                    <span>ISO 9001 & ISO 45001 Certified</span>
+                    <span>ISO 9001 &amp; ISO 45001 Certified</span>
                   </div>
-                  <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight">
+                  <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight" style={{ color: "#fff", lineHeight: 1.1, textShadow: "0 2px 16px rgba(0,80,130,0.5)" }}>
                     Ireland's Leading
-                    <span className="block text-primary">Laundry & Linen Specialists</span>
+                    <span className="block" style={{ color: "#1a2f6e" }}>Laundry &amp; Linen Specialists</span>
                   </h1>
-                  <p className="text-lg sm:text-xl text-muted-foreground max-w-lg">
+                  <p className="text-lg sm:text-xl max-w-lg font-medium" style={{ color: "rgba(255,255,255,0.95)", textShadow: "0 1px 6px rgba(0,80,130,0.4)" }}>
                     Barcode-driven track-and-trace solution with digital audit system.
                     Fresh, hygienic, and on-time laundry solutions for Ireland's most trusted businesses.
                   </p>
                 </div>
 
                 <div className="flex flex-wrap gap-4">
-                  <Button size="lg" asChild data-testid="button-get-started-hero">
-                    <a href="#login">
-                      <ScanLine className="w-5 h-5 mr-2" />
-                      Start Tracking
-                    </a>
-                  </Button>
-                  <Button size="lg" variant="outline" asChild data-testid="button-learn-more">
-                    <a href="#features">Learn More</a>
-                  </Button>
+                  <a
+                    href="#login"
+                    data-testid="button-get-started-hero"
+                    className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full font-bold text-base transition-all"
+                    style={{ background: "#1a3a7a", color: "#fff", boxShadow: "0 4px 24px rgba(0,50,120,0.4)", textDecoration: "none" }}
+                  >
+                    <ScanLine className="w-5 h-5" />
+                    Start Tracking
+                  </a>
+                  <a
+                    href="#features"
+                    data-testid="button-learn-more"
+                    className="inline-flex items-center px-7 py-3.5 rounded-full font-bold text-base transition-all"
+                    style={{ background: "rgba(255,255,255,0.3)", border: "2px solid rgba(255,255,255,0.7)", color: "#fff", textDecoration: "none", backdropFilter: "blur(8px)" }}
+                  >
+                    Learn More
+                  </a>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-6 text-sm text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <Zap className="w-4 h-4 text-primary" />
+                <div className="flex flex-wrap items-center gap-6 text-sm font-semibold" style={{ color: "#fff", textShadow: "0 1px 4px rgba(0,60,120,0.4)" }}>
+                  <div className="flex items-center gap-1.5">
+                    <Zap className="w-4 h-4" style={{ color: "#1a3a7a" }} />
                     <span>Real-time tracking</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <BadgeCheck className="w-4 h-4 text-primary" />
+                  <div className="flex items-center gap-1.5">
+                    <BadgeCheck className="w-4 h-4" style={{ color: "#1a3a7a" }} />
                     <span>Irish Owned</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Shield className="w-4 h-4" style={{ color: "#1a3a7a" }} />
+                    <span>Fully Insured</span>
                   </div>
                 </div>
               </div>
 
               <div className="relative" id="login">
-                <Card className="border-2">
+                <Card className="border-0" style={{ background: "rgba(255,255,255,0.88)", backdropFilter: "blur(24px)", border: "2px solid rgba(255,255,255,0.9)", boxShadow: "0 12px 56px rgba(0,80,160,0.3), 0 2px 12px rgba(0,0,0,0.15)" }}>
                   <CardHeader className="text-center pb-2">
-                    <CardTitle className="text-xl">Sign In to LaundryTrack</CardTitle>
+                    <CardTitle className="text-xl" style={{ color: "#0a2a4a" }}>Sign In to LaundryTrack</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <Tabs defaultValue="admin" className="w-full">
@@ -284,7 +322,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section id="features" className="py-20 px-4 sm:px-6 lg:px-8 bg-muted/30">
+        <section id="features" className="py-20 px-4 sm:px-6 lg:px-8" style={{ background: "linear-gradient(180deg, #051620 0%, #072535 100%)" }}>
           <div className="max-w-7xl mx-auto">
             <div className="text-center mb-16">
               <h2 className="text-3xl sm:text-4xl font-bold mb-4">
@@ -331,38 +369,45 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="py-20 px-4 sm:px-6 lg:px-8">
-          <div className="max-w-4xl mx-auto text-center">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
+        <section className="py-24 px-4 sm:px-6 lg:px-8" style={{ background: "linear-gradient(135deg, #00c8d4 0%, #0078a8 50%, #004a78 100%)", position: "relative", overflow: "hidden" }}>
+          <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 30% 50%, rgba(255,255,255,0.08) 0%, transparent 60%)" }} />
+          <div className="max-w-4xl mx-auto text-center" style={{ position: "relative" }}>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4" style={{ color: "#fff" }}>
               Ready to Experience Premium Laundry Services?
             </h2>
-            <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
+            <p className="text-lg mb-8 max-w-2xl mx-auto" style={{ color: "rgba(220,250,255,0.85)" }}>
               Join Ireland's most trusted businesses with fresh, hygienic, and on-time 
               laundry solutions from Mr Bubbles Express.
             </p>
-            <Button size="lg" asChild data-testid="button-get-started-cta">
-              <a href="#login">
-                Get Started Now
-              </a>
-            </Button>
+            <a
+              href="#login"
+              data-testid="button-get-started-cta"
+              className="inline-flex items-center px-8 py-4 rounded-full font-bold text-base transition-all"
+              style={{ background: "#fff", color: "#0078a8", boxShadow: "0 4px 24px rgba(0,0,0,0.25)", textDecoration: "none" }}
+            >
+              Get Started Now
+            </a>
           </div>
         </section>
       </main>
 
-      <footer className="border-t py-8 px-4 sm:px-6 lg:px-8">
+      <footer className="border-t py-8 px-4 sm:px-6 lg:px-8" style={{ background: "#030e16", borderTop: "1px solid rgba(0,200,220,0.15)" }}>
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-primary" />
-              <span className="font-semibold">Mr Bubbles Express</span>
+            <div className="flex items-center">
+              <img
+                src="/mr-bubbles-logo.png"
+                alt="Mr Bubbles Express"
+                style={{ height: "44px", width: "auto", objectFit: "contain", mixBlendMode: "screen", opacity: 0.9 }}
+              />
             </div>
-            <div className="text-sm text-muted-foreground text-center sm:text-right">
-              <p>Laundry & Linen Specialist | Drogheda, Co. Louth</p>
+            <div className="text-sm text-center sm:text-right" style={{ color: "rgba(180,230,240,0.6)" }}>
+              <p>Laundry &amp; Linen Specialist | Drogheda, Co. Louth</p>
               <p>086 270 9299 | info@mrbubblesexpress.com</p>
             </div>
           </div>
-          <div className="mt-4 pt-4 border-t text-center text-xs text-muted-foreground">
-            <p>Certified to ISO 9001 & ISO 45001 | Fully Insured | Irish Owned | Reliable | Innovative</p>
+          <div className="mt-4 pt-4 text-center text-xs" style={{ borderTop: "1px solid rgba(0,200,220,0.1)", color: "rgba(180,230,240,0.4)" }}>
+            <p>Certified to ISO 9001 &amp; ISO 45001 | Fully Insured | Irish Owned | Reliable | Innovative</p>
           </div>
         </div>
       </footer>
@@ -392,14 +437,12 @@ function FeatureCard({
   description: string;
 }) {
   return (
-    <Card className="hover-elevate">
-      <CardContent className="p-6">
-        <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
-          <Icon className="w-6 h-6 text-primary" />
-        </div>
-        <h3 className="font-semibold text-lg mb-2">{title}</h3>
-        <p className="text-muted-foreground">{description}</p>
-      </CardContent>
-    </Card>
+    <div className="feature-card-hover rounded-2xl p-6" style={{ background: "rgba(255,255,255,0.04)", border: "1.5px solid rgba(0,200,220,0.18)", backdropFilter: "blur(10px)" }}>
+      <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4" style={{ background: "linear-gradient(135deg, rgba(0,200,220,0.25) 0%, rgba(0,120,168,0.25) 100%)", border: "1px solid rgba(0,200,220,0.3)" }}>
+        <Icon className="w-6 h-6" style={{ color: "#00d4e0" }} />
+      </div>
+      <h3 className="font-semibold text-lg mb-2" style={{ color: "#fff" }}>{title}</h3>
+      <p style={{ color: "rgba(180,230,240,0.7)" }}>{description}</p>
+    </div>
   );
 }
