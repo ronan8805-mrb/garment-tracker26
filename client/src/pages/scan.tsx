@@ -221,52 +221,76 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
   }, [scannedItems, scanMutation, toast]);
 
   const scanBufferRef = useRef("");
+  const refocusTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  const forceFocus = useCallback(() => {
+    if (inputRef.current && document.activeElement !== inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && scanInput.trim()) {
       e.preventDefault();
-      handleScan(scanInput.trim());
+      const code = scanInput.trim();
       setScanInput("");
       scanBufferRef.current = "";
+      handleScan(code);
+      setTimeout(forceFocus, 0);
+      setTimeout(forceFocus, 50);
+      setTimeout(forceFocus, 150);
     }
   };
 
   useEffect(() => {
-    inputRef.current?.focus();
+    forceFocus();
 
     const handleGlobalKeydown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
-        return;
-      }
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "SELECT") return;
 
-      if (e.key === "Enter") {
-        const code = scanBufferRef.current.trim();
-        if (code && canScan) {
-          handleScan(code);
-          setScanInput("");
-          scanBufferRef.current = "";
+      if (e.target !== inputRef.current) {
+        if (e.key === "Enter") {
+          const code = scanBufferRef.current.trim();
+          if (code && canScan) {
+            scanBufferRef.current = "";
+            setScanInput("");
+            handleScan(code);
+          }
+          return;
         }
-        return;
-      }
-
-      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        scanBufferRef.current += e.key;
-        setScanInput(scanBufferRef.current);
-        inputRef.current?.focus();
+        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          scanBufferRef.current += e.key;
+          setScanInput(scanBufferRef.current);
+          forceFocus();
+        }
       }
     };
 
-    const handleGlobalClick = () => {
-      inputRef.current?.focus();
+    const keepFocused = () => forceFocus();
+
+    const handleBlur = () => {
+      clearTimeout(refocusTimer.current);
+      refocusTimer.current = setTimeout(forceFocus, 10);
     };
 
+    const input = inputRef.current;
+    input?.addEventListener("blur", handleBlur);
     document.addEventListener("keydown", handleGlobalKeydown);
-    document.addEventListener("click", handleGlobalClick);
+    document.addEventListener("click", keepFocused);
+    document.addEventListener("touchend", keepFocused);
+
+    const focusInterval = setInterval(forceFocus, 300);
+
     return () => {
+      input?.removeEventListener("blur", handleBlur);
       document.removeEventListener("keydown", handleGlobalKeydown);
-      document.removeEventListener("click", handleGlobalClick);
+      document.removeEventListener("click", keepFocused);
+      document.removeEventListener("touchend", keepFocused);
+      clearInterval(focusInterval);
+      clearTimeout(refocusTimer.current);
     };
-  }, [canScan, handleScan]);
+  }, [canScan, handleScan, forceFocus]);
 
   const successCount = scannedItems.filter((s) => s.status === "success").length;
   const errorCount = scannedItems.filter((s) => s.status === "error").length;
