@@ -360,6 +360,18 @@ export class MemoryStorage implements IStorage {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    const factoryBreakdown = this._factories.map((f) => {
+      const fGarments = this._garments.filter((g) => g.factoryId === f.id);
+      return {
+        id: f.id,
+        name: f.name,
+        code: f.code,
+        total: fGarments.length,
+        atFactory: fGarments.filter((g) => g.status === "at_factory").length,
+        atLaundry: fGarments.filter((g) => g.status === "at_laundry").length,
+      };
+    });
+
     return {
       totalFactories: this._factories.length,
       activeFactories: this._factories.filter((f) => f.isActive).length,
@@ -381,6 +393,7 @@ export class MemoryStorage implements IStorage {
             (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)
         )
         .slice(0, 5),
+      factoryBreakdown,
     };
   }
 

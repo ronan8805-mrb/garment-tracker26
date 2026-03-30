@@ -72,6 +72,14 @@ export interface IStorage {
     todayScans: number;
     recentBatches: ScanBatch[];
     recentFactories: Factory[];
+    factoryBreakdown: {
+      id: string;
+      name: string;
+      code: string;
+      total: number;
+      atFactory: number;
+      atLaundry: number;
+    }[];
   }>;
   getFactoryDashboardStats(factoryId: string): Promise<{
     factoryName: string;
@@ -345,6 +353,20 @@ export class DatabaseStorage implements IStorage {
     const recentBatches = await db.select().from(scanBatches).orderBy(desc(scanBatches.createdAt)).limit(5);
     const recentFactories = await db.select().from(factories).orderBy(desc(factories.createdAt)).limit(5);
 
+    const factoryBreakdown = await db
+      .select({
+        id: factories.id,
+        name: factories.name,
+        code: factories.code,
+        total: sql<number>`count(${garments.id})::int`,
+        atFactory: sql<number>`count(${garments.id}) filter (where ${garments.status} = 'at_factory')::int`,
+        atLaundry: sql<number>`count(${garments.id}) filter (where ${garments.status} = 'at_laundry')::int`,
+      })
+      .from(factories)
+      .leftJoin(garments, eq(garments.factoryId, factories.id))
+      .groupBy(factories.id, factories.name, factories.code)
+      .orderBy(factories.name);
+
     return {
       totalFactories: factoryStats.total,
       activeFactories: factoryStats.active,
@@ -354,6 +376,7 @@ export class DatabaseStorage implements IStorage {
       todayScans: todayScansResult?.count || 0,
       recentBatches,
       recentFactories,
+      factoryBreakdown,
     };
   }
 

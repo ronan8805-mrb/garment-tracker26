@@ -4,6 +4,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   Factory,
   Shirt,
   ScanLine,
@@ -13,7 +21,16 @@ import {
   Clock,
 } from "lucide-react";
 import { Link } from "wouter";
-import type { Factory as FactoryType, Garment, ScanBatch } from "@shared/schema";
+import type { Factory as FactoryType, ScanBatch } from "@shared/schema";
+
+interface FactoryBreakdown {
+  id: string;
+  name: string;
+  code: string;
+  total: number;
+  atFactory: number;
+  atLaundry: number;
+}
 
 interface DashboardStats {
   totalFactories: number;
@@ -24,6 +41,7 @@ interface DashboardStats {
   todayScans: number;
   recentBatches: ScanBatch[];
   recentFactories: FactoryType[];
+  factoryBreakdown: FactoryBreakdown[];
 }
 
 export default function AdminDashboard() {
@@ -83,57 +101,93 @@ export default function AdminDashboard() {
         />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-            <CardTitle className="text-lg">Recent Factories</CardTitle>
-            <Button variant="ghost" size="sm" asChild>
-              <Link href="/factories">
-                View all
-                <ArrowRight className="w-4 h-4 ml-1" />
-              </Link>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {stats?.recentFactories && stats.recentFactories.length > 0 ? (
-              <div className="space-y-3">
-                {stats.recentFactories.map((factory) => (
-                  <div
-                    key={factory.id}
-                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center">
-                        <Building2 className="w-5 h-5 text-primary" />
-                      </div>
-                      <div>
-                        <p className="font-medium">{factory.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          Code: {factory.code}
-                        </p>
-                      </div>
-                    </div>
-                    <Badge variant={factory.isActive ? "default" : "secondary"}>
-                      {factory.isActive ? "Active" : "Inactive"}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                icon={Building2}
-                title="No factories yet"
-                description="Create your first factory to get started"
-                action={
-                  <Button size="sm" asChild>
-                    <Link href="/factories">Add Factory</Link>
-                  </Button>
-                }
-              />
-            )}
-          </CardContent>
-        </Card>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+          <CardTitle className="text-lg">Garments Per Factory</CardTitle>
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/factories">
+              Manage Factories
+              <ArrowRight className="w-4 h-4 ml-1" />
+            </Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {stats?.factoryBreakdown && stats.factoryBreakdown.length > 0 ? (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Factory</TableHead>
+                    <TableHead className="text-center">Total</TableHead>
+                    <TableHead className="text-center">At Factory</TableHead>
+                    <TableHead className="text-center">At Laundry</TableHead>
+                    <TableHead className="hidden sm:table-cell">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {stats.factoryBreakdown.map((fb) => {
+                    const pct = fb.total > 0 ? Math.round((fb.atFactory / fb.total) * 100) : 0;
+                    return (
+                      <TableRow key={fb.id} className="cursor-pointer hover:bg-muted/50">
+                        <TableCell>
+                          <Link href={`/garments?factory=${fb.id}`} className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-md bg-primary/10 flex items-center justify-center">
+                              <Building2 className="w-4 h-4 text-primary" />
+                            </div>
+                            <div>
+                              <p className="font-medium">{fb.name}</p>
+                              <p className="text-xs text-muted-foreground">{fb.code}</p>
+                            </div>
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className="font-semibold text-lg">{fb.total}</span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20">
+                            {fb.atFactory}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20">
+                            {fb.atLaundry}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="hidden sm:table-cell">
+                          <div className="w-full max-w-[120px]">
+                            <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                              <span>{pct}% factory</span>
+                            </div>
+                            <div className="h-2 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-blue-500 rounded-full transition-all"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <EmptyState
+              icon={Building2}
+              title="No factories yet"
+              description="Create your first factory to get started"
+              action={
+                <Button size="sm" asChild>
+                  <Link href="/factories">Add Factory</Link>
+                </Button>
+              }
+            />
+          )}
+        </CardContent>
+      </Card>
 
+      <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
             <CardTitle className="text-lg">Recent Batches</CardTitle>
@@ -161,7 +215,7 @@ export default function AdminDashboard() {
                         <div className="flex items-center gap-1 text-sm text-muted-foreground">
                           <Clock className="w-3 h-3" />
                           {batch.createdAt
-                            ? new Date(batch.createdAt).toLocaleDateString()
+                            ? new Date(batch.createdAt).toLocaleString()
                             : "Unknown"}
                         </div>
                       </div>
@@ -187,6 +241,24 @@ export default function AdminDashboard() {
                 }
               />
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+            <CardTitle className="text-lg">Today's Scans</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col items-center justify-center py-6 text-center">
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-3">
+                <ScanLine className="w-8 h-8 text-primary" />
+              </div>
+              <p className="text-4xl font-bold">{stats?.todayScans || 0}</p>
+              <p className="text-sm text-muted-foreground mt-1">scans today</p>
+              <Button size="sm" variant="outline" className="mt-4" asChild>
+                <Link href="/reports">View Reports</Link>
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
