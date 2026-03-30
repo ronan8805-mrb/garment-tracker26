@@ -49,7 +49,8 @@ export function AppSidebar({ userProfile, isFactorySession, isAdminSession }: Ap
   const factoryItems = [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
     { title: "Scanning", url: "/scan", icon: ScanLine },
-    { title: "Garment Reports", url: "/garments", icon: Shirt },
+    { title: "Garments", url: "/garments", icon: Shirt },
+    { title: "Reports", url: "/reports", icon: FileText },
   ];
 
   const items = isAdmin ? adminItems : factoryItems;

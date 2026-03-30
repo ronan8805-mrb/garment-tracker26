@@ -101,13 +101,19 @@ export default function ReportsPage() {
   const [viewingDateFactory, setViewingDateFactory] = useState<string | null>(null);
   const [viewingBatchId, setViewingBatchId] = useState<string | null>(null);
 
-  const { isAdminSession } = useAuth();
+  const { isAdminSession, isFactorySession, factorySession } = useAuth();
 
   const { data: factories } = useQuery<Factory[]>({
     queryKey: ["/api/factories"],
   });
 
-  // Daily scan dates — filtered by factory
+  const factoryDisplayName = isFactorySession
+    ? factorySession?.factoryName || "Your Factory"
+    : dateFactory !== "all"
+      ? factories?.find((f) => f.id === dateFactory)?.name || "Unknown"
+      : "All Factories";
+
+  // Daily scan dates — filtered by factory (admin picks, factory auto-filtered by server)
   const dateQueryUrl =
     isAdminSession && dateFactory !== "all"
       ? `/api/scan-dates?factory=${dateFactory}`
@@ -154,8 +160,7 @@ export default function ReportsPage() {
   const getFactoryName = (factoryId: string) =>
     factories?.find((f) => f.id === factoryId)?.name || "Unknown";
 
-  const selectedDateFactoryName =
-    dateFactory === "all" ? "All Factories" : getFactoryName(dateFactory);
+  const selectedDateFactoryName = factoryDisplayName;
 
   const handleViewDateReport = (date: string) => {
     setViewingDateFactory(dateFactory === "all" ? null : dateFactory);
@@ -219,9 +224,13 @@ export default function ReportsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Garment Reports</h1>
+          <h1 className="text-2xl font-bold">
+            {isFactorySession ? `${factorySession?.factoryName || "Factory"} Reports` : "Garment Reports"}
+          </h1>
           <p className="text-muted-foreground">
-            View and download scan reports by date or batch
+            {isFactorySession
+              ? "View your scan history and download reports"
+              : "View and download scan reports by date or batch"}
           </p>
         </div>
       </div>
@@ -262,12 +271,10 @@ export default function ReportsPage() {
                         </SelectContent>
                       </Select>
                     )}
-                    <p className="text-sm text-muted-foreground">
-                      Showing:{" "}
-                      <span className="font-semibold text-foreground">
-                        {selectedDateFactoryName}
-                      </span>
-                    </p>
+                    <Badge variant="outline" className="text-sm px-3 py-1">
+                      <Building2 className="w-3 h-3 mr-1" />
+                      {selectedDateFactoryName}
+                    </Badge>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -384,7 +391,7 @@ export default function ReportsPage() {
                         className="pl-9"
                       />
                     </div>
-                    {isAdminSession && (
+                    {isAdminSession ? (
                       <Select
                         value={batchFactory}
                         onValueChange={setBatchFactory}
@@ -402,6 +409,11 @@ export default function ReportsPage() {
                           ))}
                         </SelectContent>
                       </Select>
+                    ) : (
+                      <Badge variant="outline" className="text-sm px-3 py-1">
+                        <Building2 className="w-3 h-3 mr-1" />
+                        {factorySession?.factoryName || "Your Factory"}
+                      </Badge>
                     )}
                     <Select
                       value={batchDirection}
@@ -524,7 +536,9 @@ export default function ReportsPage() {
                         batchFactory !== "all" ||
                         batchDirection !== "all"
                           ? "Try adjusting your filters"
-                          : "Complete a scan batch to see it here"}
+                          : isFactorySession
+                            ? "Complete a scan batch to see your reports here"
+                            : "Complete a scan batch to see it here"}
                       </p>
                     </div>
                   )}

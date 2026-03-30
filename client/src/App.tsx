@@ -49,10 +49,11 @@ function AuthenticatedLayout({ children, isFactorySession, isAdminSession }: { c
 
 function AuthenticatedRouter({ isFactorySession, isAdminSession }: { isFactorySession?: boolean; isAdminSession?: boolean }) {
   const isAdmin = isAdminSession ?? false;
+  const { factorySession } = useAuth();
 
   const effectiveProfile = isAdmin 
     ? { role: "admin" as const, factoryId: null, id: "", userId: "", createdAt: new Date() }
-    : { role: "factory" as const, factoryId: null, id: "", userId: "", createdAt: new Date() };
+    : { role: "factory" as const, factoryId: factorySession?.factoryId || null, id: "", userId: "", createdAt: new Date() };
 
   return (
     <AuthenticatedLayout isFactorySession={isFactorySession} isAdminSession={isAdminSession}>
@@ -67,9 +68,7 @@ function AuthenticatedRouter({ isFactorySession, isAdminSession }: { isFactorySe
         <Route path="/scan">
           <ScanPage userProfile={effectiveProfile} />
         </Route>
-        {isAdmin && (
-          <Route path="/reports" component={ReportsPage} />
-        )}
+        <Route path="/reports" component={ReportsPage} />
         <Route component={NotFound} />
       </Switch>
     </AuthenticatedLayout>
