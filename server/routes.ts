@@ -507,6 +507,129 @@ export async function registerRoutes(
     }
   });
 
+  // JSON data for in-app report viewing (batch)
+  app.get("/api/batches/:id/data", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      const batch = await storage.getBatch(req.params.id as string);
+      if (!batch) {
+        return res.status(404).json({ message: "Batch not found" });
+      }
+      if (req.isFactorySession && batch.factoryId !== req.factoryId) {
+        return res.status(403).json({ message: "Access denied to this batch" });
+      }
+
+      const factory = await storage.getFactory(batch.factoryId);
+      const scanEventsData = await storage.getScanEventsByBatchId(batch.id);
+
+      const allFactories = await storage.getFactories();
+      const factoryMap = new Map(allFactories.map((f) => [f.id, f.name]));
+
+      const resolveScanner = (uid: string) => {
+        if (uid === "admin") return "Admin";
+        if (uid.startsWith("factory:")) return factoryMap.get(uid.replace("factory:", "")) || uid;
+        return uid;
+      };
+
+      const items = [];
+      const seen = new Set<string>();
+      for (const ev of scanEventsData) {
+        const garment = await storage.getGarment(ev.garmentId);
+        const isDup = seen.has(ev.garmentId);
+        seen.add(ev.garmentId);
+        items.push({
+          garmentId: garment?.garmentId || ev.garmentId,
+          garmentType: garment?.garmentType || "-",
+          size: garment?.size || "-",
+          direction: ev.direction,
+          location: ev.location,
+          scannedAt: ev.scannedAt,
+          scannedBy: resolveScanner(ev.userId),
+          duplicate: isDup,
+        });
+      }
+
+      res.json({
+        batchNumber: batch.batchNumber,
+        factoryName: factory?.name || "Unknown",
+        factoryCode: factory?.code || "N/A",
+        location: batch.location,
+        direction: batch.direction,
+        totalItems: batch.totalItems,
+        createdAt: batch.createdAt,
+        completedAt: batch.completedAt,
+        scannedBy: resolveScanner(batch.userId),
+        items,
+      });
+    } catch (error) {
+      console.error("Error fetching batch data:", error);
+      res.status(500).json({ message: "Failed to fetch batch data" });
+    }
+  });
+
+  // JSON data for in-app report viewing (daily)
+  app.get("/api/scan-dates/:date/data", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      const date = req.params.date as string;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ message: "Invalid date format. Use YYYY-MM-DD" });
+      }
+
+      let factoryId: string | undefined;
+      if (req.isAdminSession) {
+        factoryId = req.query.factory as string | undefined;
+      } else if (req.isFactorySession) {
+        factoryId = req.factoryId;
+      }
+
+      const scanEventsData = await storage.getScanEventsByDate(date, factoryId);
+      const factoryName = factoryId
+        ? (await storage.getFactory(factoryId))?.name || "Unknown"
+        : "All Factories";
+
+      const allFactories = await storage.getFactories();
+      const factoryMap = new Map(allFactories.map((f) => [f.id, f.name]));
+
+      const resolveScanner = (uid: string) => {
+        if (uid === "admin") return "Admin";
+        if (uid.startsWith("factory:")) return factoryMap.get(uid.replace("factory:", "")) || uid;
+        return uid;
+      };
+
+      const inCount = scanEventsData.filter((e) => e.direction === "IN").length;
+      const outCount = scanEventsData.filter((e) => e.direction === "OUT").length;
+
+      const items = [];
+      const seen = new Set<string>();
+      for (const ev of scanEventsData) {
+        const garment = await storage.getGarment(ev.garmentId);
+        const isDup = seen.has(ev.garmentId);
+        seen.add(ev.garmentId);
+        items.push({
+          garmentId: garment?.garmentId || ev.garmentId,
+          garmentType: garment?.garmentType || "-",
+          size: garment?.size || "-",
+          direction: ev.direction,
+          location: ev.location,
+          scannedAt: ev.scannedAt,
+          scannedBy: resolveScanner(ev.userId),
+          duplicate: isDup,
+        });
+      }
+
+      res.json({
+        date,
+        factoryName,
+        totalScans: scanEventsData.length,
+        inCount,
+        outCount,
+        items,
+      });
+    } catch (error) {
+      console.error("Error fetching date scan data:", error);
+      res.status(500).json({ message: "Failed to fetch scan data" });
+    }
+  });
+
   // PDF Report routes
   app.get("/api/batches/:id/report", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
@@ -548,19 +671,42 @@ export async function registerRoutes(
       doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
       doc.moveDown(1);
 
+      const fmtDateTime = (d: Date | string | null | undefined): string => {
+        if (!d) return "-";
+        const dt = typeof d === "string" ? new Date(d) : d;
+        const dd = String(dt.getDate()).padStart(2, "0");
+        const mm = String(dt.getMonth() + 1).padStart(2, "0");
+        const yy = dt.getFullYear();
+        const hh = String(dt.getHours()).padStart(2, "0");
+        const mi = String(dt.getMinutes()).padStart(2, "0");
+        const ss = String(dt.getSeconds()).padStart(2, "0");
+        return `${dd}/${mm}/${yy}  ${hh}:${mi}:${ss}`;
+      };
+
+      // Resolve who scanned this batch
+      let scannedByName = "Unknown";
+      if (batch.userId === "admin") {
+        scannedByName = "Admin";
+      } else if (batch.userId.startsWith("factory:")) {
+        const fId = batch.userId.replace("factory:", "");
+        const f = await storage.getFactory(fId);
+        scannedByName = f ? f.name : fId;
+      }
+
       // Batch details
       doc.fontSize(12).font("Helvetica-Bold").text("Batch Details");
       doc.moveDown(0.5);
-      
+
       doc.fontSize(11).font("Helvetica");
       doc.text(`Batch Number: `, { continued: true }).font("Helvetica-Bold").text(batch.batchNumber);
       doc.font("Helvetica").text(`Factory: `, { continued: true }).font("Helvetica-Bold").text(`${factory?.name || "Unknown"} (${factory?.code || "N/A"})`);
+      doc.font("Helvetica").text(`Scanned By: `, { continued: true }).font("Helvetica-Bold").text(scannedByName);
       doc.font("Helvetica").text(`Location: `, { continued: true }).font("Helvetica-Bold").text(batch.location);
       doc.font("Helvetica").text(`Direction: `, { continued: true }).font("Helvetica-Bold").text(batch.direction === "IN" ? "Scan IN" : "Scan OUT");
       doc.font("Helvetica").text(`Total Items: `, { continued: true }).font("Helvetica-Bold").text(String(batch.totalItems || 0));
       doc.moveDown(0.5);
-      doc.font("Helvetica").text(`Created: `, { continued: true }).text(batch.createdAt ? new Date(batch.createdAt).toLocaleString() : "Unknown");
-      doc.text(`Completed: `, { continued: true }).text(batch.completedAt ? new Date(batch.completedAt).toLocaleString() : "Pending");
+      doc.font("Helvetica").text(`Created: `, { continued: true }).text(fmtDateTime(batch.createdAt));
+      doc.text(`Completed: `, { continued: true }).text(batch.completedAt ? fmtDateTime(batch.completedAt) : "Pending");
       
       doc.moveDown(1.5);
 
@@ -616,7 +762,7 @@ export async function registerRoutes(
           const garment = await storage.getGarment(event.garmentId);
           const displayId = garment?.garmentId || event.garmentId;
           const typeSize = garment ? `${garment.garmentType} / ${garment.size}` : "-";
-          const scanTime = event.scannedAt ? new Date(event.scannedAt).toLocaleString() : "-";
+          const scanTime = fmtDateTime(event.scannedAt);
           const isDup = seenInRows.has(event.garmentId);
           seenInRows.add(event.garmentId);
           
@@ -700,7 +846,32 @@ export async function registerRoutes(
         day: "numeric",
       });
 
-      const doc = new PDFDocument({ size: "A4", margin: 50 });
+      const fmtDT = (d: Date | string | null | undefined): string => {
+        if (!d) return "-";
+        const dt = typeof d === "string" ? new Date(d) : d;
+        const hh = String(dt.getHours()).padStart(2, "0");
+        const mi = String(dt.getMinutes()).padStart(2, "0");
+        const ss = String(dt.getSeconds()).padStart(2, "0");
+        return `${hh}:${mi}:${ss}`;
+      };
+
+      // Pre-load factory names for "Scanned By" column
+      const factoryCache = new Map<string, string>();
+      const allFactories = await storage.getFactories();
+      for (const f of allFactories) {
+        factoryCache.set(f.id, f.name);
+      }
+
+      const resolveScanner = (userId: string): string => {
+        if (userId === "admin") return "Admin";
+        if (userId.startsWith("factory:")) {
+          const fId = userId.replace("factory:", "");
+          return factoryCache.get(fId) || fId;
+        }
+        return userId;
+      };
+
+      const doc = new PDFDocument({ size: "A4", margin: 40 });
 
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader(
@@ -721,7 +892,7 @@ export async function registerRoutes(
       doc.fontSize(18).font("Helvetica-Bold").text("DAILY SCAN REPORT", { align: "center" });
       doc.moveDown(1);
 
-      doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
+      doc.moveTo(40, doc.y).lineTo(555, doc.y).stroke();
       doc.moveDown(1);
 
       doc.fontSize(12).font("Helvetica-Bold").text("Report Details");
@@ -758,28 +929,30 @@ export async function registerRoutes(
         doc.moveDown(0.5);
 
         const tableTop = doc.y;
-        const col1 = 50;
-        const col2 = 68;
-        const col3 = 200;
-        const col4 = 290;
-        const col5 = 340;
-        const col6 = 400;
-        const col7 = 470;
+        const col1 = 40;
+        const col2 = 55;
+        const col3 = 185;
+        const col4 = 260;
+        const col5 = 285;
+        const col6 = 335;
+        const col7 = 410;
+        const col8 = 480;
 
-        doc.fontSize(8).font("Helvetica-Bold");
+        doc.fontSize(7).font("Helvetica-Bold");
         doc.text("#", col1, tableTop);
         doc.text("Garment ID", col2, tableTop);
         doc.text("Type / Size", col3, tableTop);
         doc.text("Dir", col4, tableTop);
         doc.text("Location", col5, tableTop);
-        doc.text("Time", col6, tableTop);
-        doc.text("Flag", col7, tableTop);
+        doc.text("Scanned By", col6, tableTop);
+        doc.text("Time", col7, tableTop);
+        doc.text("Flag", col8, tableTop);
 
         doc.moveDown(0.3);
-        doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
+        doc.moveTo(40, doc.y).lineTo(555, doc.y).stroke();
         doc.moveDown(0.3);
 
-        doc.font("Helvetica").fontSize(7);
+        doc.font("Helvetica").fontSize(6.5);
         let rowY = doc.y;
         const lineHeight = 12;
         const seenInRows = new Set<string>();
@@ -795,9 +968,8 @@ export async function registerRoutes(
           const garment = await storage.getGarment(event.garmentId);
           const displayId = garment?.garmentId || event.garmentId;
           const typeSize = garment ? `${garment.garmentType} / ${garment.size}` : "-";
-          const scanTime = event.scannedAt
-            ? new Date(event.scannedAt).toLocaleTimeString()
-            : "-";
+          const scanTime = fmtDT(event.scannedAt);
+          const scannerName = resolveScanner(event.userId);
           const isDup = seenInRows.has(event.garmentId);
           seenInRows.add(event.garmentId);
 
@@ -809,9 +981,10 @@ export async function registerRoutes(
           doc.text(typeSize, col3, rowY);
           doc.text(event.direction, col4, rowY);
           doc.text(event.location, col5, rowY);
-          doc.text(scanTime, col6, rowY);
+          doc.text(scannerName, col6, rowY);
+          doc.text(scanTime, col7, rowY);
           if (isDup) {
-            doc.font("Helvetica-Bold").text("DUPLICATE", col7, rowY);
+            doc.font("Helvetica-Bold").text("DUPLICATE", col8, rowY);
             doc.font("Helvetica");
           }
           doc.fillColor("#000");
@@ -860,35 +1033,31 @@ export async function registerRoutes(
       
       doc.pipe(res);
 
-      // Generate barcodes for all garments - labels with factory, size, type info
-      const barcodeWidth = 150;
-      const barcodeHeight = 40;
+      const barcodeWidth = 220;
+      const barcodeHeight = 55;
       const labelPadding = 8;
-      const labelHeight = barcodeHeight + 55; // Space for factory name, barcode, type/size
-      const cellHeight = labelHeight + 10;
-      const columns = 3;
+      const labelHeight = barcodeHeight + 75;
+      const cellHeight = labelHeight + 12;
+      const columns = 2;
       const startX = 30;
       const startY = 95;
-      const columnWidth = 180;
+      const columnWidth = 268;
       const pageHeight = doc.page.height;
-      
-      // Helper function to generate barcode as buffer
+
       const generateBarcodeBuffer = (text: string): Buffer => {
-        const canvas = createCanvas(barcodeWidth * 2, barcodeHeight * 2);
+        const canvas = createCanvas(barcodeWidth * 3, barcodeHeight * 3);
         JsBarcode(canvas, text, {
           format: "CODE128",
           width: 2,
-          height: 60,
-          displayValue: true,
-          fontSize: 12,
-          margin: 2,
+          height: 80,
+          displayValue: false,
+          margin: 4,
           background: "#ffffff",
           lineColor: "#000000"
         });
         return canvas.toBuffer("image/png");
       };
-      
-      // Add header function
+
       const addHeader = () => {
         doc.fontSize(16).font("Helvetica-Bold").text("Mr Bubbles Express", 30, 25, { align: "center" });
         doc.fontSize(8).font("Helvetica").text("Laundry & Linen Specialist | ISO 9001 & ISO 45001", { align: "center" });
@@ -897,7 +1066,6 @@ export async function registerRoutes(
         doc.moveTo(30, 75).lineTo(565, 75).stroke();
       };
 
-      // Add footer function
       const addFooter = (pageNum: number, totalPages: number) => {
         doc.fontSize(7).fillColor("#666").text(
           `Page ${pageNum} of ${totalPages} | Generated: ${new Date().toLocaleString()} | Mr Bubbles Express | 086 270 9299`,
@@ -906,13 +1074,12 @@ export async function registerRoutes(
         doc.fillColor("#000");
       };
 
-      // Calculate total pages needed
       const rowsPerPage = Math.floor((pageHeight - startY - 50) / cellHeight);
       const itemsPerPage = rowsPerPage * columns;
       const totalPages = Math.ceil(garments.length / itemsPerPage);
-      
+
       addHeader();
-      
+
       let currentPage = 1;
       let itemsOnCurrentPage = 0;
       let currentY = startY;
@@ -921,13 +1088,11 @@ export async function registerRoutes(
         const garment = garments[i];
         const col = itemsOnCurrentPage % columns;
         const x = startX + (col * columnWidth);
-        
-        // Check if we need a new row
+
         if (col === 0 && itemsOnCurrentPage > 0) {
           currentY += cellHeight;
         }
-        
-        // Check if we need a new page
+
         if (currentY + cellHeight > pageHeight - 50) {
           addFooter(currentPage, totalPages);
           doc.addPage();
@@ -936,39 +1101,41 @@ export async function registerRoutes(
           currentY = startY;
           itemsOnCurrentPage = 0;
         }
-        
-        // Draw label border
+
         const labelX = x + 5;
         const labelWidth = columnWidth - 10;
         doc.rect(labelX, currentY, labelWidth, labelHeight).stroke();
-        
-        // Factory name at top of label
+
         doc.fontSize(8).font("Helvetica-Bold").text(
           `${factory.name} (${factory.code})`,
           labelX,
           currentY + labelPadding,
           { width: labelWidth, align: "center" }
         );
-        
-        // Generate and add barcode
+
         const barcodeBuffer = generateBarcodeBuffer(garment.garmentId);
-        doc.image(barcodeBuffer, labelX + (labelWidth - barcodeWidth) / 2, currentY + 18, { 
-          width: barcodeWidth, 
-          height: barcodeHeight 
+        doc.image(barcodeBuffer, labelX + (labelWidth - barcodeWidth) / 2, currentY + 20, {
+          width: barcodeWidth,
+          height: barcodeHeight,
         });
-        
-        // Garment type and size at bottom
+
+        doc.fontSize(7).font("Helvetica").text(
+          garment.garmentId,
+          labelX,
+          currentY + 20 + barcodeHeight + 2,
+          { width: labelWidth, align: "center" }
+        );
+
         doc.fontSize(10).font("Helvetica-Bold").text(
           `${garment.garmentType.toUpperCase()} - SIZE: ${garment.size}`,
           labelX,
           currentY + labelHeight - 18,
           { width: labelWidth, align: "center" }
         );
-        
+
         itemsOnCurrentPage++;
       }
-      
-      // Add footer on last page
+
       addFooter(currentPage, totalPages);
 
       doc.end();

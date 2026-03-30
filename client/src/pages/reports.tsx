@@ -28,6 +28,12 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   FileText,
   Download,
   Search,
@@ -38,6 +44,9 @@ import {
   Filter,
   Barcode,
   CalendarDays,
+  Eye,
+  AlertTriangle,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import type { Factory, ScanBatch } from "@shared/schema";
@@ -47,10 +56,45 @@ interface ScanDate {
   count: number;
 }
 
+interface ReportItem {
+  garmentId: string;
+  garmentType: string;
+  size: string;
+  direction: string;
+  location: string;
+  scannedAt: string | null;
+  scannedBy: string;
+  duplicate: boolean;
+}
+
+interface DateReportData {
+  date: string;
+  factoryName: string;
+  totalScans: number;
+  inCount: number;
+  outCount: number;
+  items: ReportItem[];
+}
+
+interface BatchReportData {
+  batchNumber: string;
+  factoryName: string;
+  factoryCode: string;
+  location: string;
+  direction: string;
+  totalItems: number;
+  createdAt: string | null;
+  completedAt: string | null;
+  scannedBy: string;
+  items: ReportItem[];
+}
+
 export default function ReportsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterFactory, setFilterFactory] = useState<string>("all");
   const [filterDirection, setFilterDirection] = useState<string>("all");
+  const [viewingDate, setViewingDate] = useState<string | null>(null);
+  const [viewingBatchId, setViewingBatchId] = useState<string | null>(null);
   const { isAdminSession } = useAuth();
 
   const { data: factories } = useQuery<Factory[]>({
@@ -63,6 +107,26 @@ export default function ReportsPage() {
 
   const { data: scanDates, isLoading: datesLoading } = useQuery<ScanDate[]>({
     queryKey: ["/api/scan-dates"],
+  });
+
+  const { data: dateReport, isLoading: dateReportLoading } = useQuery<DateReportData>({
+    queryKey: ["/api/scan-dates", viewingDate, "data"],
+    queryFn: async () => {
+      const res = await fetch(`/api/scan-dates/${viewingDate}/data`);
+      if (!res.ok) throw new Error("Failed to load report");
+      return res.json();
+    },
+    enabled: !!viewingDate,
+  });
+
+  const { data: batchReport, isLoading: batchReportLoading } = useQuery<BatchReportData>({
+    queryKey: ["/api/batches", viewingBatchId, "data"],
+    queryFn: async () => {
+      const res = await fetch(`/api/batches/${viewingBatchId}/data`);
+      if (!res.ok) throw new Error("Failed to load report");
+      return res.json();
+    },
+    enabled: !!viewingBatchId,
   });
 
   const filteredBatches = batches?.filter((b) => {
@@ -95,6 +159,21 @@ export default function ReportsPage() {
       year: "numeric",
       month: "short",
       day: "numeric",
+    });
+  };
+
+  const fmtTime = (d: string | null) => {
+    if (!d) return "-";
+    const dt = new Date(d);
+    return dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  };
+
+  const fmtDateTime = (d: string | null) => {
+    if (!d) return "-";
+    const dt = new Date(d);
+    return dt.toLocaleString("en-GB", {
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
     });
   };
 
@@ -143,7 +222,7 @@ export default function ReportsPage() {
                           <TableRow>
                             <TableHead>Date</TableHead>
                             <TableHead>Total Scans</TableHead>
-                            <TableHead className="text-right">Report</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -151,7 +230,7 @@ export default function ReportsPage() {
                             <TableRow
                               key={sd.date}
                               className="cursor-pointer hover:bg-muted/50"
-                              onClick={() => handleDownloadDateReport(sd.date)}
+                              onClick={() => setViewingDate(sd.date)}
                             >
                               <TableCell>
                                 <div className="flex items-center gap-3">
@@ -170,17 +249,30 @@ export default function ReportsPage() {
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-right">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDownloadDateReport(sd.date);
-                                  }}
-                                >
-                                  <Download className="w-4 h-4 mr-1" />
-                                  PDF
-                                </Button>
+                                <div className="flex items-center justify-end gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setViewingDate(sd.date);
+                                    }}
+                                  >
+                                    <Eye className="w-4 h-4 mr-1" />
+                                    View
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDownloadDateReport(sd.date);
+                                    }}
+                                  >
+                                    <Download className="w-4 h-4 mr-1" />
+                                    PDF
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))}
@@ -301,14 +393,24 @@ export default function ReportsPage() {
                                   : "-"}
                               </TableCell>
                               <TableCell className="text-right">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleDownloadReport(batch.id)}
-                                >
-                                  <Download className="w-4 h-4 mr-1" />
-                                  PDF
-                                </Button>
+                                <div className="flex items-center justify-end gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setViewingBatchId(batch.id)}
+                                  >
+                                    <Eye className="w-4 h-4 mr-1" />
+                                    View
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDownloadReport(batch.id)}
+                                  >
+                                    <Download className="w-4 h-4 mr-1" />
+                                    PDF
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))}
@@ -394,6 +496,206 @@ export default function ReportsPage() {
           </Card>
         </div>
       </div>
+
+      {/* Daily report viewer dialog */}
+      <Dialog open={!!viewingDate} onOpenChange={(open) => { if (!open) setViewingDate(null); }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-xl">
+                Daily Scan Report — {viewingDate ? formatDate(viewingDate) : ""}
+              </DialogTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-4"
+                onClick={() => viewingDate && handleDownloadDateReport(viewingDate)}
+              >
+                <Download className="w-4 h-4 mr-1" />
+                Download PDF
+              </Button>
+            </div>
+          </DialogHeader>
+
+          {dateReportLoading ? (
+            <div className="space-y-3 py-6">
+              <Skeleton className="h-6 w-48" />
+              <Skeleton className="h-4 w-36" />
+              <Skeleton className="h-64 w-full" />
+            </div>
+          ) : dateReport ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-muted rounded-lg p-3 text-center">
+                  <p className="text-xs text-muted-foreground">Factory</p>
+                  <p className="font-semibold text-sm">{dateReport.factoryName}</p>
+                </div>
+                <div className="bg-muted rounded-lg p-3 text-center">
+                  <p className="text-xs text-muted-foreground">Total Scans</p>
+                  <p className="font-semibold text-lg">{dateReport.totalScans}</p>
+                </div>
+                <div className="bg-green-500/10 rounded-lg p-3 text-center">
+                  <p className="text-xs text-muted-foreground">Scanned IN</p>
+                  <p className="font-semibold text-lg text-green-600">{dateReport.inCount}</p>
+                </div>
+                <div className="bg-blue-500/10 rounded-lg p-3 text-center">
+                  <p className="text-xs text-muted-foreground">Scanned OUT</p>
+                  <p className="font-semibold text-lg text-blue-600">{dateReport.outCount}</p>
+                </div>
+              </div>
+
+              {dateReport.items.some((i) => i.duplicate) && (
+                <div className="flex items-center gap-2 bg-red-50 dark:bg-red-950/30 text-red-600 rounded-lg p-3 text-sm font-medium">
+                  <AlertTriangle className="w-4 h-4" />
+                  {dateReport.items.filter((i) => i.duplicate).length} duplicate garment(s) detected
+                </div>
+              )}
+
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10">#</TableHead>
+                      <TableHead>Garment ID</TableHead>
+                      <TableHead>Type / Size</TableHead>
+                      <TableHead>Dir</TableHead>
+                      <TableHead>Location</TableHead>
+                      <TableHead>Scanned By</TableHead>
+                      <TableHead>Time</TableHead>
+                      <TableHead>Flag</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {dateReport.items.map((item, idx) => (
+                      <TableRow key={idx} className={item.duplicate ? "bg-red-50 dark:bg-red-950/20" : ""}>
+                        <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                        <TableCell className="font-mono text-xs">{item.garmentId}</TableCell>
+                        <TableCell>{item.garmentType} / {item.size}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={
+                            item.direction === "IN"
+                              ? "bg-green-500/10 text-green-600 border-green-500/20"
+                              : "bg-blue-500/10 text-blue-600 border-blue-500/20"
+                          }>
+                            {item.direction}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{item.location}</TableCell>
+                        <TableCell className="font-medium">{item.scannedBy}</TableCell>
+                        <TableCell>{fmtTime(item.scannedAt)}</TableCell>
+                        <TableCell>
+                          {item.duplicate && (
+                            <Badge variant="destructive" className="text-xs">DUPLICATE</Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* Batch report viewer dialog */}
+      <Dialog open={!!viewingBatchId} onOpenChange={(open) => { if (!open) setViewingBatchId(null); }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-xl">
+                Batch Report — {batchReport?.batchNumber || ""}
+              </DialogTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-4"
+                onClick={() => viewingBatchId && handleDownloadReport(viewingBatchId)}
+              >
+                <Download className="w-4 h-4 mr-1" />
+                Download PDF
+              </Button>
+            </div>
+          </DialogHeader>
+
+          {batchReportLoading ? (
+            <div className="space-y-3 py-6">
+              <Skeleton className="h-6 w-48" />
+              <Skeleton className="h-4 w-36" />
+              <Skeleton className="h-64 w-full" />
+            </div>
+          ) : batchReport ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="bg-muted rounded-lg p-3">
+                  <p className="text-xs text-muted-foreground">Factory</p>
+                  <p className="font-semibold text-sm">{batchReport.factoryName} ({batchReport.factoryCode})</p>
+                </div>
+                <div className="bg-muted rounded-lg p-3">
+                  <p className="text-xs text-muted-foreground">Scanned By</p>
+                  <p className="font-semibold text-sm">{batchReport.scannedBy}</p>
+                </div>
+                <div className="bg-muted rounded-lg p-3">
+                  <p className="text-xs text-muted-foreground">Direction</p>
+                  <p className="font-semibold text-sm">
+                    {batchReport.direction === "IN" ? "Scan IN" : "Scan OUT"} @ {batchReport.location}
+                  </p>
+                </div>
+                <div className="bg-muted rounded-lg p-3">
+                  <p className="text-xs text-muted-foreground">Total Items</p>
+                  <p className="font-semibold text-lg">{batchReport.totalItems}</p>
+                </div>
+                <div className="bg-muted rounded-lg p-3">
+                  <p className="text-xs text-muted-foreground">Created</p>
+                  <p className="font-semibold text-sm">{fmtDateTime(batchReport.createdAt)}</p>
+                </div>
+                <div className="bg-muted rounded-lg p-3">
+                  <p className="text-xs text-muted-foreground">Completed</p>
+                  <p className="font-semibold text-sm">{batchReport.completedAt ? fmtDateTime(batchReport.completedAt) : "Pending"}</p>
+                </div>
+              </div>
+
+              {batchReport.items.some((i) => i.duplicate) && (
+                <div className="flex items-center gap-2 bg-red-50 dark:bg-red-950/30 text-red-600 rounded-lg p-3 text-sm font-medium">
+                  <AlertTriangle className="w-4 h-4" />
+                  {batchReport.items.filter((i) => i.duplicate).length} duplicate garment(s) detected
+                </div>
+              )}
+
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10">#</TableHead>
+                      <TableHead>Garment ID</TableHead>
+                      <TableHead>Type / Size</TableHead>
+                      <TableHead>Scanned By</TableHead>
+                      <TableHead>Scan Time</TableHead>
+                      <TableHead>Flag</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {batchReport.items.map((item, idx) => (
+                      <TableRow key={idx} className={item.duplicate ? "bg-red-50 dark:bg-red-950/20" : ""}>
+                        <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                        <TableCell className="font-mono text-xs">{item.garmentId}</TableCell>
+                        <TableCell>{item.garmentType} / {item.size}</TableCell>
+                        <TableCell className="font-medium">{item.scannedBy}</TableCell>
+                        <TableCell>{fmtDateTime(item.scannedAt)}</TableCell>
+                        <TableCell>
+                          {item.duplicate && (
+                            <Badge variant="destructive" className="text-xs">DUPLICATE</Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
