@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -46,7 +45,6 @@ import {
   CalendarDays,
   Eye,
   AlertTriangle,
-  X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import type { Factory, ScanBatch } from "@shared/schema";
@@ -90,35 +88,52 @@ interface BatchReportData {
 }
 
 export default function ReportsPage() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filterFactory, setFilterFactory] = useState<string>("all");
-  const [filterDirection, setFilterDirection] = useState<string>("all");
+  // Daily tab filters
+  const [dateFactory, setDateFactory] = useState<string>("all");
+
+  // Batch tab filters
+  const [batchFactory, setBatchFactory] = useState<string>("all");
+  const [batchDirection, setBatchDirection] = useState<string>("all");
+  const [batchSearch, setBatchSearch] = useState("");
+
+  // Viewer state
   const [viewingDate, setViewingDate] = useState<string | null>(null);
+  const [viewingDateFactory, setViewingDateFactory] = useState<string | null>(null);
   const [viewingBatchId, setViewingBatchId] = useState<string | null>(null);
+
   const { isAdminSession } = useAuth();
 
   const { data: factories } = useQuery<Factory[]>({
     queryKey: ["/api/factories"],
   });
 
+  // Daily scan dates — filtered by factory
+  const dateQueryUrl =
+    isAdminSession && dateFactory !== "all"
+      ? `/api/scan-dates?factory=${dateFactory}`
+      : "/api/scan-dates";
+
+  const { data: scanDates, isLoading: datesLoading } = useQuery<ScanDate[]>({
+    queryKey: [dateQueryUrl],
+  });
+
   const { data: batches, isLoading: batchesLoading } = useQuery<ScanBatch[]>({
     queryKey: ["/api/batches"],
   });
 
-  const { data: scanDates, isLoading: datesLoading } = useQuery<ScanDate[]>({
-    queryKey: ["/api/scan-dates"],
-  });
-
+  // In-app date report viewer — passes factory filter
   const { data: dateReport, isLoading: dateReportLoading } = useQuery<DateReportData>({
-    queryKey: ["/api/scan-dates", viewingDate, "data"],
+    queryKey: ["/api/scan-dates", viewingDate, "data", viewingDateFactory],
     queryFn: async () => {
-      const res = await fetch(`/api/scan-dates/${viewingDate}/data`);
+      const params = viewingDateFactory ? `?factory=${viewingDateFactory}` : "";
+      const res = await fetch(`/api/scan-dates/${viewingDate}/data${params}`);
       if (!res.ok) throw new Error("Failed to load report");
       return res.json();
     },
     enabled: !!viewingDate,
   });
 
+  // In-app batch report viewer
   const { data: batchReport, isLoading: batchReportLoading } = useQuery<BatchReportData>({
     queryKey: ["/api/batches", viewingBatchId, "data"],
     queryFn: async () => {
@@ -130,22 +145,37 @@ export default function ReportsPage() {
   });
 
   const filteredBatches = batches?.filter((b) => {
-    const matchesSearch = b.batchNumber.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFactory = filterFactory === "all" || b.factoryId === filterFactory;
-    const matchesDirection = filterDirection === "all" || b.direction === filterDirection;
+    const matchesSearch = b.batchNumber.toLowerCase().includes(batchSearch.toLowerCase());
+    const matchesFactory = batchFactory === "all" || b.factoryId === batchFactory;
+    const matchesDirection = batchDirection === "all" || b.direction === batchDirection;
     return matchesSearch && matchesFactory && matchesDirection;
   });
 
-  const getFactoryName = (factoryId: string) => {
-    return factories?.find((f) => f.id === factoryId)?.name || "Unknown";
-  };
+  const getFactoryName = (factoryId: string) =>
+    factories?.find((f) => f.id === factoryId)?.name || "Unknown";
 
-  const handleDownloadReport = (batchId: string) => {
-    window.open(`/api/batches/${batchId}/report`, "_blank");
+  const selectedDateFactoryName =
+    dateFactory === "all" ? "All Factories" : getFactoryName(dateFactory);
+
+  const handleViewDateReport = (date: string) => {
+    setViewingDateFactory(dateFactory === "all" ? null : dateFactory);
+    setViewingDate(date);
   };
 
   const handleDownloadDateReport = (date: string) => {
-    window.open(`/api/scan-dates/${date}/report`, "_blank");
+    const factoryParam =
+      isAdminSession && dateFactory !== "all" ? `?factory=${dateFactory}` : "";
+    window.open(`/api/scan-dates/${date}/report${factoryParam}`, "_blank");
+  };
+
+  const handleDownloadDateReportFromViewer = () => {
+    if (!viewingDate) return;
+    const factoryParam = viewingDateFactory ? `?factory=${viewingDateFactory}` : "";
+    window.open(`/api/scan-dates/${viewingDate}/report${factoryParam}`, "_blank");
+  };
+
+  const handleDownloadBatchReport = (batchId: string) => {
+    window.open(`/api/batches/${batchId}/report`, "_blank");
   };
 
   const handleDownloadBarcodes = (factoryId: string) => {
@@ -165,15 +195,23 @@ export default function ReportsPage() {
   const fmtTime = (d: string | null) => {
     if (!d) return "-";
     const dt = new Date(d);
-    return dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    return dt.toLocaleTimeString("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
   };
 
   const fmtDateTime = (d: string | null) => {
     if (!d) return "-";
     const dt = new Date(d);
     return dt.toLocaleString("en-GB", {
-      day: "2-digit", month: "2-digit", year: "numeric",
-      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
     });
   };
 
@@ -182,7 +220,9 @@ export default function ReportsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Garment Reports</h1>
-          <p className="text-muted-foreground">View scan history by date and download PDF reports</p>
+          <p className="text-muted-foreground">
+            View and download scan reports by date or batch
+          </p>
         </div>
       </div>
 
@@ -200,13 +240,35 @@ export default function ReportsPage() {
               </TabsTrigger>
             </TabsList>
 
+            {/* ── DAILY REPORTS TAB ── */}
             <TabsContent value="dates">
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg">Daily Scan Reports</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Click download to get a PDF of all garments scanned on that date
-                  </p>
+                  <div className="flex flex-wrap items-center gap-3 mt-3">
+                    {isAdminSession && (
+                      <Select value={dateFactory} onValueChange={setDateFactory}>
+                        <SelectTrigger className="w-[200px]">
+                          <Building2 className="w-4 h-4 mr-2" />
+                          <SelectValue placeholder="Select Factory" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Factories</SelectItem>
+                          {factories?.map((f) => (
+                            <SelectItem key={f.id} value={f.id}>
+                              {f.name} ({f.code})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    <p className="text-sm text-muted-foreground">
+                      Showing:{" "}
+                      <span className="font-semibold text-foreground">
+                        {selectedDateFactoryName}
+                      </span>
+                    </p>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {datesLoading ? (
@@ -221,6 +283,7 @@ export default function ReportsPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Date</TableHead>
+                            <TableHead>Factory</TableHead>
                             <TableHead>Total Scans</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
@@ -230,7 +293,7 @@ export default function ReportsPage() {
                             <TableRow
                               key={sd.date}
                               className="cursor-pointer hover:bg-muted/50"
-                              onClick={() => setViewingDate(sd.date)}
+                              onClick={() => handleViewDateReport(sd.date)}
                             >
                               <TableCell>
                                 <div className="flex items-center gap-3">
@@ -238,10 +301,20 @@ export default function ReportsPage() {
                                     <Calendar className="w-5 h-5 text-primary" />
                                   </div>
                                   <div>
-                                    <span className="font-medium">{formatDate(sd.date)}</span>
-                                    <p className="text-xs text-muted-foreground">{sd.date}</p>
+                                    <span className="font-medium">
+                                      {formatDate(sd.date)}
+                                    </span>
+                                    <p className="text-xs text-muted-foreground">
+                                      {sd.date}
+                                    </p>
                                   </div>
                                 </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="text-xs">
+                                  <Building2 className="w-3 h-3 mr-1" />
+                                  {selectedDateFactoryName}
+                                </Badge>
                               </TableCell>
                               <TableCell>
                                 <Badge variant="secondary" className="text-sm">
@@ -255,7 +328,7 @@ export default function ReportsPage() {
                                     size="sm"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setViewingDate(sd.date);
+                                      handleViewDateReport(sd.date);
                                     }}
                                   >
                                     <Eye className="w-4 h-4 mr-1" />
@@ -286,7 +359,9 @@ export default function ReportsPage() {
                       </div>
                       <h3 className="font-semibold text-lg mb-1">No scan history</h3>
                       <p className="text-muted-foreground">
-                        Scan garments to see daily reports here
+                        {dateFactory !== "all"
+                          ? `No scans found for ${selectedDateFactoryName}`
+                          : "Scan garments to see daily reports here"}
                       </p>
                     </div>
                   )}
@@ -294,6 +369,7 @@ export default function ReportsPage() {
               </Card>
             </TabsContent>
 
+            {/* ── BATCH REPORTS TAB ── */}
             <TabsContent value="batches">
               <Card>
                 <CardHeader className="pb-3">
@@ -303,14 +379,17 @@ export default function ReportsPage() {
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input
                         placeholder="Search batches..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        value={batchSearch}
+                        onChange={(e) => setBatchSearch(e.target.value)}
                         className="pl-9"
                       />
                     </div>
                     {isAdminSession && (
-                      <Select value={filterFactory} onValueChange={setFilterFactory}>
-                        <SelectTrigger className="w-[160px]">
+                      <Select
+                        value={batchFactory}
+                        onValueChange={setBatchFactory}
+                      >
+                        <SelectTrigger className="w-[200px]">
                           <Building2 className="w-4 h-4 mr-2" />
                           <SelectValue placeholder="Factory" />
                         </SelectTrigger>
@@ -318,13 +397,16 @@ export default function ReportsPage() {
                           <SelectItem value="all">All Factories</SelectItem>
                           {factories?.map((f) => (
                             <SelectItem key={f.id} value={f.id}>
-                              {f.name}
+                              {f.name} ({f.code})
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     )}
-                    <Select value={filterDirection} onValueChange={setFilterDirection}>
+                    <Select
+                      value={batchDirection}
+                      onValueChange={setBatchDirection}
+                    >
                       <SelectTrigger className="w-[140px]">
                         <Filter className="w-4 h-4 mr-2" />
                         <SelectValue placeholder="Direction" />
@@ -363,10 +445,16 @@ export default function ReportsPage() {
                               <TableCell>
                                 <div className="flex items-center gap-2">
                                   <FileText className="w-4 h-4 text-muted-foreground" />
-                                  <span className="font-medium">{batch.batchNumber}</span>
+                                  <span className="font-medium">
+                                    {batch.batchNumber}
+                                  </span>
                                 </div>
                               </TableCell>
-                              <TableCell>{getFactoryName(batch.factoryId)}</TableCell>
+                              <TableCell>
+                                <span className="font-medium">
+                                  {getFactoryName(batch.factoryId)}
+                                </span>
+                              </TableCell>
                               <TableCell>
                                 <Badge
                                   variant="outline"
@@ -385,11 +473,13 @@ export default function ReportsPage() {
                                 </Badge>
                               </TableCell>
                               <TableCell>
-                                <span className="font-medium">{batch.totalItems}</span>
+                                <span className="font-medium">
+                                  {batch.totalItems}
+                                </span>
                               </TableCell>
                               <TableCell className="text-muted-foreground">
                                 {batch.createdAt
-                                  ? new Date(batch.createdAt).toLocaleDateString()
+                                  ? fmtDateTime(batch.createdAt)
                                   : "-"}
                               </TableCell>
                               <TableCell className="text-right">
@@ -397,7 +487,9 @@ export default function ReportsPage() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => setViewingBatchId(batch.id)}
+                                    onClick={() =>
+                                      setViewingBatchId(batch.id)
+                                    }
                                   >
                                     <Eye className="w-4 h-4 mr-1" />
                                     View
@@ -405,7 +497,9 @@ export default function ReportsPage() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => handleDownloadReport(batch.id)}
+                                    onClick={() =>
+                                      handleDownloadBatchReport(batch.id)
+                                    }
                                   >
                                     <Download className="w-4 h-4 mr-1" />
                                     PDF
@@ -422,9 +516,13 @@ export default function ReportsPage() {
                       <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
                         <FileText className="w-8 h-8 text-muted-foreground" />
                       </div>
-                      <h3 className="font-semibold text-lg mb-1">No batches found</h3>
+                      <h3 className="font-semibold text-lg mb-1">
+                        No batches found
+                      </h3>
                       <p className="text-muted-foreground">
-                        {searchQuery || filterFactory !== "all" || filterDirection !== "all"
+                        {batchSearch ||
+                        batchFactory !== "all" ||
+                        batchDirection !== "all"
                           ? "Try adjusting your filters"
                           : "Complete a scan batch to see it here"}
                       </p>
@@ -436,6 +534,7 @@ export default function ReportsPage() {
           </Tabs>
         </div>
 
+        {/* ── SIDEBAR ── */}
         <div className="space-y-4">
           {isAdminSession && (
             <Card>
@@ -444,7 +543,8 @@ export default function ReportsPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Download barcode sheets for all garments assigned to a factory.
+                  Download barcode sheets for all garments assigned to a
+                  factory.
                 </p>
                 {factories && factories.length > 0 ? (
                   <div className="space-y-2">
@@ -475,30 +575,50 @@ export default function ReportsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Total Batches</span>
+                <span className="text-sm text-muted-foreground">
+                  Total Batches
+                </span>
                 <span className="font-semibold">{batches?.length || 0}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Items Processed</span>
+                <span className="text-sm text-muted-foreground">
+                  Items Processed
+                </span>
                 <span className="font-semibold">
                   {batches?.reduce((sum, b) => sum + b.totalItems, 0) || 0}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Days with Scans</span>
-                <span className="font-semibold">{scanDates?.length || 0}</span>
+                <span className="text-sm text-muted-foreground">
+                  Days with Scans
+                </span>
+                <span className="font-semibold">
+                  {scanDates?.length || 0}
+                </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Factories</span>
-                <span className="font-semibold">{factories?.length || 0}</span>
+                <span className="text-sm text-muted-foreground">
+                  Factories
+                </span>
+                <span className="font-semibold">
+                  {factories?.length || 0}
+                </span>
               </div>
             </CardContent>
           </Card>
         </div>
       </div>
 
-      {/* Daily report viewer dialog */}
-      <Dialog open={!!viewingDate} onOpenChange={(open) => { if (!open) setViewingDate(null); }}>
+      {/* ── DAILY REPORT VIEWER DIALOG ── */}
+      <Dialog
+        open={!!viewingDate}
+        onOpenChange={(open) => {
+          if (!open) {
+            setViewingDate(null);
+            setViewingDateFactory(null);
+          }
+        }}
+      >
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <div className="flex items-center justify-between">
@@ -509,7 +629,7 @@ export default function ReportsPage() {
                 variant="outline"
                 size="sm"
                 className="ml-4"
-                onClick={() => viewingDate && handleDownloadDateReport(viewingDate)}
+                onClick={handleDownloadDateReportFromViewer}
               >
                 <Download className="w-4 h-4 mr-1" />
                 Download PDF
@@ -525,29 +645,44 @@ export default function ReportsPage() {
             </div>
           ) : dateReport ? (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="bg-muted rounded-lg p-3 text-center">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div className="bg-muted rounded-lg p-3 text-center col-span-2 sm:col-span-1">
                   <p className="text-xs text-muted-foreground">Factory</p>
-                  <p className="font-semibold text-sm">{dateReport.factoryName}</p>
+                  <p className="font-semibold text-sm">
+                    {dateReport.factoryName}
+                  </p>
+                </div>
+                <div className="bg-muted rounded-lg p-3 text-center">
+                  <p className="text-xs text-muted-foreground">Date</p>
+                  <p className="font-semibold text-sm">
+                    {formatDate(dateReport.date)}
+                  </p>
                 </div>
                 <div className="bg-muted rounded-lg p-3 text-center">
                   <p className="text-xs text-muted-foreground">Total Scans</p>
-                  <p className="font-semibold text-lg">{dateReport.totalScans}</p>
+                  <p className="font-semibold text-lg">
+                    {dateReport.totalScans}
+                  </p>
                 </div>
                 <div className="bg-green-500/10 rounded-lg p-3 text-center">
                   <p className="text-xs text-muted-foreground">Scanned IN</p>
-                  <p className="font-semibold text-lg text-green-600">{dateReport.inCount}</p>
+                  <p className="font-semibold text-lg text-green-600">
+                    {dateReport.inCount}
+                  </p>
                 </div>
                 <div className="bg-blue-500/10 rounded-lg p-3 text-center">
                   <p className="text-xs text-muted-foreground">Scanned OUT</p>
-                  <p className="font-semibold text-lg text-blue-600">{dateReport.outCount}</p>
+                  <p className="font-semibold text-lg text-blue-600">
+                    {dateReport.outCount}
+                  </p>
                 </div>
               </div>
 
               {dateReport.items.some((i) => i.duplicate) && (
                 <div className="flex items-center gap-2 bg-red-50 dark:bg-red-950/30 text-red-600 rounded-lg p-3 text-sm font-medium">
                   <AlertTriangle className="w-4 h-4" />
-                  {dateReport.items.filter((i) => i.duplicate).length} duplicate garment(s) detected
+                  {dateReport.items.filter((i) => i.duplicate).length} duplicate
+                  garment(s) detected
                 </div>
               )}
 
@@ -567,25 +702,48 @@ export default function ReportsPage() {
                   </TableHeader>
                   <TableBody>
                     {dateReport.items.map((item, idx) => (
-                      <TableRow key={idx} className={item.duplicate ? "bg-red-50 dark:bg-red-950/20" : ""}>
-                        <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
-                        <TableCell className="font-mono text-xs">{item.garmentId}</TableCell>
-                        <TableCell>{item.garmentType} / {item.size}</TableCell>
+                      <TableRow
+                        key={idx}
+                        className={
+                          item.duplicate
+                            ? "bg-red-50 dark:bg-red-950/20"
+                            : ""
+                        }
+                      >
+                        <TableCell className="text-muted-foreground">
+                          {idx + 1}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {item.garmentId}
+                        </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={
-                            item.direction === "IN"
-                              ? "bg-green-500/10 text-green-600 border-green-500/20"
-                              : "bg-blue-500/10 text-blue-600 border-blue-500/20"
-                          }>
+                          {item.garmentType} / {item.size}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={
+                              item.direction === "IN"
+                                ? "bg-green-500/10 text-green-600 border-green-500/20"
+                                : "bg-blue-500/10 text-blue-600 border-blue-500/20"
+                            }
+                          >
                             {item.direction}
                           </Badge>
                         </TableCell>
                         <TableCell>{item.location}</TableCell>
-                        <TableCell className="font-medium">{item.scannedBy}</TableCell>
+                        <TableCell className="font-medium">
+                          {item.scannedBy}
+                        </TableCell>
                         <TableCell>{fmtTime(item.scannedAt)}</TableCell>
                         <TableCell>
                           {item.duplicate && (
-                            <Badge variant="destructive" className="text-xs">DUPLICATE</Badge>
+                            <Badge
+                              variant="destructive"
+                              className="text-xs"
+                            >
+                              DUPLICATE
+                            </Badge>
                           )}
                         </TableCell>
                       </TableRow>
@@ -598,8 +756,13 @@ export default function ReportsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Batch report viewer dialog */}
-      <Dialog open={!!viewingBatchId} onOpenChange={(open) => { if (!open) setViewingBatchId(null); }}>
+      {/* ── BATCH REPORT VIEWER DIALOG ── */}
+      <Dialog
+        open={!!viewingBatchId}
+        onOpenChange={(open) => {
+          if (!open) setViewingBatchId(null);
+        }}
+      >
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <div className="flex items-center justify-between">
@@ -610,7 +773,9 @@ export default function ReportsPage() {
                 variant="outline"
                 size="sm"
                 className="ml-4"
-                onClick={() => viewingBatchId && handleDownloadReport(viewingBatchId)}
+                onClick={() =>
+                  viewingBatchId && handleDownloadBatchReport(viewingBatchId)
+                }
               >
                 <Download className="w-4 h-4 mr-1" />
                 Download PDF
@@ -629,36 +794,52 @@ export default function ReportsPage() {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div className="bg-muted rounded-lg p-3">
                   <p className="text-xs text-muted-foreground">Factory</p>
-                  <p className="font-semibold text-sm">{batchReport.factoryName} ({batchReport.factoryCode})</p>
+                  <p className="font-semibold text-sm">
+                    {batchReport.factoryName} ({batchReport.factoryCode})
+                  </p>
                 </div>
                 <div className="bg-muted rounded-lg p-3">
                   <p className="text-xs text-muted-foreground">Scanned By</p>
-                  <p className="font-semibold text-sm">{batchReport.scannedBy}</p>
+                  <p className="font-semibold text-sm">
+                    {batchReport.scannedBy}
+                  </p>
                 </div>
                 <div className="bg-muted rounded-lg p-3">
                   <p className="text-xs text-muted-foreground">Direction</p>
                   <p className="font-semibold text-sm">
-                    {batchReport.direction === "IN" ? "Scan IN" : "Scan OUT"} @ {batchReport.location}
+                    {batchReport.direction === "IN"
+                      ? "Scan IN"
+                      : "Scan OUT"}{" "}
+                    @ {batchReport.location}
                   </p>
                 </div>
                 <div className="bg-muted rounded-lg p-3">
                   <p className="text-xs text-muted-foreground">Total Items</p>
-                  <p className="font-semibold text-lg">{batchReport.totalItems}</p>
+                  <p className="font-semibold text-lg">
+                    {batchReport.totalItems}
+                  </p>
                 </div>
                 <div className="bg-muted rounded-lg p-3">
                   <p className="text-xs text-muted-foreground">Created</p>
-                  <p className="font-semibold text-sm">{fmtDateTime(batchReport.createdAt)}</p>
+                  <p className="font-semibold text-sm">
+                    {fmtDateTime(batchReport.createdAt)}
+                  </p>
                 </div>
                 <div className="bg-muted rounded-lg p-3">
                   <p className="text-xs text-muted-foreground">Completed</p>
-                  <p className="font-semibold text-sm">{batchReport.completedAt ? fmtDateTime(batchReport.completedAt) : "Pending"}</p>
+                  <p className="font-semibold text-sm">
+                    {batchReport.completedAt
+                      ? fmtDateTime(batchReport.completedAt)
+                      : "Pending"}
+                  </p>
                 </div>
               </div>
 
               {batchReport.items.some((i) => i.duplicate) && (
                 <div className="flex items-center gap-2 bg-red-50 dark:bg-red-950/30 text-red-600 rounded-lg p-3 text-sm font-medium">
                   <AlertTriangle className="w-4 h-4" />
-                  {batchReport.items.filter((i) => i.duplicate).length} duplicate garment(s) detected
+                  {batchReport.items.filter((i) => i.duplicate).length}{" "}
+                  duplicate garment(s) detected
                 </div>
               )}
 
@@ -676,15 +857,37 @@ export default function ReportsPage() {
                   </TableHeader>
                   <TableBody>
                     {batchReport.items.map((item, idx) => (
-                      <TableRow key={idx} className={item.duplicate ? "bg-red-50 dark:bg-red-950/20" : ""}>
-                        <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
-                        <TableCell className="font-mono text-xs">{item.garmentId}</TableCell>
-                        <TableCell>{item.garmentType} / {item.size}</TableCell>
-                        <TableCell className="font-medium">{item.scannedBy}</TableCell>
-                        <TableCell>{fmtDateTime(item.scannedAt)}</TableCell>
+                      <TableRow
+                        key={idx}
+                        className={
+                          item.duplicate
+                            ? "bg-red-50 dark:bg-red-950/20"
+                            : ""
+                        }
+                      >
+                        <TableCell className="text-muted-foreground">
+                          {idx + 1}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {item.garmentId}
+                        </TableCell>
+                        <TableCell>
+                          {item.garmentType} / {item.size}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {item.scannedBy}
+                        </TableCell>
+                        <TableCell>
+                          {fmtDateTime(item.scannedAt)}
+                        </TableCell>
                         <TableCell>
                           {item.duplicate && (
-                            <Badge variant="destructive" className="text-xs">DUPLICATE</Badge>
+                            <Badge
+                              variant="destructive"
+                              className="text-xs"
+                            >
+                              DUPLICATE
+                            </Badge>
                           )}
                         </TableCell>
                       </TableRow>
