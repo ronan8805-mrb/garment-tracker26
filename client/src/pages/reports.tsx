@@ -329,7 +329,7 @@ export default function ReportsPage() {
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-right">
-                                <div className="flex items-center justify-end gap-2">
+                                <div className="flex items-center justify-end gap-1 flex-wrap">
                                   <Button
                                     variant="outline"
                                     size="sm"
@@ -340,6 +340,24 @@ export default function ReportsPage() {
                                   >
                                     <Eye className="w-4 h-4 mr-1" />
                                     View
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const factoryParam =
+                                        isAdminSession && dateFactory !== "all"
+                                          ? `?factory=${dateFactory}`
+                                          : "";
+                                      window.open(
+                                        `/api/scan-dates/${sd.date}/barcodes${factoryParam}`,
+                                        "_blank"
+                                      );
+                                    }}
+                                  >
+                                    <Barcode className="w-4 h-4 mr-1" />
+                                    Barcodes
                                   </Button>
                                   <Button
                                     variant="outline"
@@ -505,6 +523,16 @@ export default function ReportsPage() {
                                   >
                                     <Eye className="w-4 h-4 mr-1" />
                                     View
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() =>
+                                      window.open(`/api/batches/${batch.id}/barcodes`, "_blank")
+                                    }
+                                  >
+                                    <Barcode className="w-4 h-4 mr-1" />
+                                    Barcodes
                                   </Button>
                                   <Button
                                     variant="ghost"

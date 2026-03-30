@@ -650,7 +650,7 @@ export async function registerRoutes(
       const doc = new PDFDocument({ size: "A4", margin: 50 });
       
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="${batch.batchNumber}.pdf"`);
+      res.setHeader("Content-Disposition", `inline; filename="${batch.batchNumber}.pdf"`);
       
       doc.pipe(res);
 
@@ -876,7 +876,7 @@ export async function registerRoutes(
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="Scan_Report_${date}.pdf"`
+        `inline; filename="Scan_Report_${date}.pdf"`
       );
 
       doc.pipe(res);
@@ -1029,7 +1029,7 @@ export async function registerRoutes(
       const doc = new PDFDocument({ size: "A4", margin: 30 });
       
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="${factory.code}_Barcodes_${garments.length}_Garments.pdf"`);
+      res.setHeader("Content-Disposition", `inline; filename="${factory.code}_Barcodes_${garments.length}_Garments.pdf"`);
       
       doc.pipe(res);
 
@@ -1227,7 +1227,7 @@ function generateBarcodePdf(
   const doc = new PDFDocument({ size: "A4", margin: 30 });
 
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
 
   doc.pipe(res);
 
