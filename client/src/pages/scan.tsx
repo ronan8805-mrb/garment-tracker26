@@ -193,6 +193,8 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
     },
   });
 
+  const canScan = isAdmin ? !!factoryId : true;
+
   const handleScan = useCallback((code: string) => {
     if (!code.trim()) return;
     void beepScan();
@@ -295,8 +297,6 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
   const successCount = scannedItems.filter((s) => s.status === "success").length;
   const errorCount = scannedItems.filter((s) => s.status === "error").length;
   const warningCount = scannedItems.filter((s) => s.status === "warning").length;
-
-  const canScan = isAdmin ? !!factoryId : true;
 
   return (
     <div className="space-y-6">
