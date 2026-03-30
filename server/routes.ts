@@ -1145,5 +1145,203 @@ export async function registerRoutes(
     }
   });
 
+  // Barcode PDF for garments in a specific batch
+  app.get("/api/batches/:id/barcodes", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      const batch = await storage.getBatch(req.params.id as string);
+      if (!batch) return res.status(404).json({ message: "Batch not found" });
+      if (req.isFactorySession && batch.factoryId !== req.factoryId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const factory = await storage.getFactory(batch.factoryId);
+      const scanEventsData = await storage.getScanEventsByBatchId(batch.id);
+
+      const garmentsList: { garmentId: string; garmentType: string; size: string }[] = [];
+      const seen = new Set<string>();
+      for (const ev of scanEventsData) {
+        if (seen.has(ev.garmentId)) continue;
+        seen.add(ev.garmentId);
+        const g = await storage.getGarment(ev.garmentId);
+        if (g) garmentsList.push({ garmentId: g.garmentId, garmentType: g.garmentType, size: g.size });
+      }
+
+      const title = `${factory?.name || "Unknown"} (${factory?.code || "N/A"}) — Batch ${batch.batchNumber}`;
+      const filename = `${batch.batchNumber}_Barcodes.pdf`;
+
+      generateBarcodePdf(res, garmentsList, title, filename);
+    } catch (error) {
+      console.error("Error generating batch barcodes:", error);
+      res.status(500).json({ message: "Failed to generate barcodes" });
+    }
+  });
+
+  // Barcode PDF for garments scanned on a specific date
+  app.get("/api/scan-dates/:date/barcodes", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      const date = req.params.date as string;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ message: "Invalid date format" });
+      }
+
+      let factoryId: string | undefined;
+      if (req.isAdminSession) {
+        factoryId = req.query.factory as string | undefined;
+      } else if (req.isFactorySession) {
+        factoryId = req.factoryId;
+      }
+
+      const scanEventsData = await storage.getScanEventsByDate(date, factoryId);
+      const factoryName = factoryId
+        ? (await storage.getFactory(factoryId))?.name || "Unknown"
+        : "All Factories";
+
+      const garmentsList: { garmentId: string; garmentType: string; size: string }[] = [];
+      const seen = new Set<string>();
+      for (const ev of scanEventsData) {
+        if (seen.has(ev.garmentId)) continue;
+        seen.add(ev.garmentId);
+        const g = await storage.getGarment(ev.garmentId);
+        if (g) garmentsList.push({ garmentId: g.garmentId, garmentType: g.garmentType, size: g.size });
+      }
+
+      const title = `${factoryName} — Scans ${date}`;
+      const filename = `Barcodes_${date}.pdf`;
+
+      generateBarcodePdf(res, garmentsList, title, filename);
+    } catch (error) {
+      console.error("Error generating date barcodes:", error);
+      res.status(500).json({ message: "Failed to generate barcodes" });
+    }
+  });
+
   return httpServer;
+}
+
+function generateBarcodePdf(
+  res: any,
+  garments: { garmentId: string; garmentType: string; size: string }[],
+  title: string,
+  filename: string,
+) {
+  const doc = new PDFDocument({ size: "A4", margin: 30 });
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+  doc.pipe(res);
+
+  const barcodeWidth = 220;
+  const barcodeHeight = 55;
+  const labelPadding = 8;
+  const labelHeight = barcodeHeight + 75;
+  const cellHeight = labelHeight + 12;
+  const columns = 2;
+  const startX = 30;
+  const startY = 95;
+  const columnWidth = 268;
+  const pageHeight = doc.page.height;
+
+  const genBarcode = (text: string): Buffer => {
+    const canvas = createCanvas(barcodeWidth * 3, barcodeHeight * 3);
+    JsBarcode(canvas, text, {
+      format: "CODE128",
+      width: 2,
+      height: 80,
+      displayValue: false,
+      margin: 4,
+      background: "#ffffff",
+      lineColor: "#000000",
+    });
+    return canvas.toBuffer("image/png");
+  };
+
+  const addHeader = () => {
+    doc.fontSize(16).font("Helvetica-Bold").text("Mr Bubbles Express", 30, 25, { align: "center" });
+    doc.fontSize(8).font("Helvetica").text("Laundry & Linen Specialist | ISO 9001 & ISO 45001", { align: "center" });
+    doc.moveDown(0.3);
+    doc.fontSize(10).font("Helvetica-Bold").text(`${title} — ${garments.length} Garment(s)`, { align: "center" });
+    doc.moveTo(30, 75).lineTo(565, 75).stroke();
+  };
+
+  const addFooter = (pageNum: number, totalPages: number) => {
+    doc.fontSize(7).fillColor("#666").text(
+      `Page ${pageNum} of ${totalPages} | Generated: ${new Date().toLocaleString()} | Mr Bubbles Express | 086 270 9299`,
+      30, pageHeight - 30, { align: "center", width: 535 },
+    );
+    doc.fillColor("#000");
+  };
+
+  if (garments.length === 0) {
+    addHeader();
+    doc.moveDown(4);
+    doc.fontSize(14).font("Helvetica").text("No garments found.", { align: "center" });
+    doc.end();
+    return;
+  }
+
+  const rowsPerPage = Math.floor((pageHeight - startY - 50) / cellHeight);
+  const itemsPerPage = rowsPerPage * columns;
+  const totalPages = Math.ceil(garments.length / itemsPerPage);
+
+  addHeader();
+
+  let currentPage = 1;
+  let itemsOnCurrentPage = 0;
+  let currentY = startY;
+
+  for (let i = 0; i < garments.length; i++) {
+    const garment = garments[i];
+    const col = itemsOnCurrentPage % columns;
+    const x = startX + col * columnWidth;
+
+    if (col === 0 && itemsOnCurrentPage > 0) {
+      currentY += cellHeight;
+    }
+
+    if (currentY + cellHeight > pageHeight - 50) {
+      addFooter(currentPage, totalPages);
+      doc.addPage();
+      currentPage++;
+      addHeader();
+      currentY = startY;
+      itemsOnCurrentPage = 0;
+    }
+
+    const labelX = x + 5;
+    const labelWidth = columnWidth - 10;
+    doc.rect(labelX, currentY, labelWidth, labelHeight).stroke();
+
+    doc.fontSize(8).font("Helvetica-Bold").text(
+      title.split(" — ")[0],
+      labelX,
+      currentY + labelPadding,
+      { width: labelWidth, align: "center" },
+    );
+
+    const buf = genBarcode(garment.garmentId);
+    doc.image(buf, labelX + (labelWidth - barcodeWidth) / 2, currentY + 20, {
+      width: barcodeWidth,
+      height: barcodeHeight,
+    });
+
+    doc.fontSize(7).font("Helvetica").text(
+      garment.garmentId,
+      labelX,
+      currentY + 20 + barcodeHeight + 2,
+      { width: labelWidth, align: "center" },
+    );
+
+    doc.fontSize(10).font("Helvetica-Bold").text(
+      `${garment.garmentType.toUpperCase()} - SIZE: ${garment.size}`,
+      labelX,
+      currentY + labelHeight - 18,
+      { width: labelWidth, align: "center" },
+    );
+
+    itemsOnCurrentPage++;
+  }
+
+  addFooter(currentPage, totalPages);
+  doc.end();
 }

@@ -639,15 +639,28 @@ export default function ReportsPage() {
               <DialogTitle className="text-xl">
                 Daily Scan Report — {viewingDate ? formatDate(viewingDate) : ""}
               </DialogTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                className="ml-4"
-                onClick={handleDownloadDateReportFromViewer}
-              >
-                <Download className="w-4 h-4 mr-1" />
-                Download PDF
-              </Button>
+              <div className="flex items-center gap-2 ml-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (!viewingDate) return;
+                    const factoryParam = viewingDateFactory ? `?factory=${viewingDateFactory}` : "";
+                    window.open(`/api/scan-dates/${viewingDate}/barcodes${factoryParam}`, "_blank");
+                  }}
+                >
+                  <Barcode className="w-4 h-4 mr-1" />
+                  Barcodes
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownloadDateReportFromViewer}
+                >
+                  <Download className="w-4 h-4 mr-1" />
+                  PDF Report
+                </Button>
+              </div>
             </div>
           </DialogHeader>
 
@@ -783,17 +796,26 @@ export default function ReportsPage() {
               <DialogTitle className="text-xl">
                 Batch Report — {batchReport?.batchNumber || ""}
               </DialogTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                className="ml-4"
-                onClick={() =>
-                  viewingBatchId && handleDownloadBatchReport(viewingBatchId)
-                }
-              >
-                <Download className="w-4 h-4 mr-1" />
-                Download PDF
-              </Button>
+              <div className="flex items-center gap-2 ml-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => viewingBatchId && window.open(`/api/batches/${viewingBatchId}/barcodes`, "_blank")}
+                >
+                  <Barcode className="w-4 h-4 mr-1" />
+                  Barcodes
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    viewingBatchId && handleDownloadBatchReport(viewingBatchId)
+                  }
+                >
+                  <Download className="w-4 h-4 mr-1" />
+                  PDF Report
+                </Button>
+              </div>
             </div>
           </DialogHeader>
 
