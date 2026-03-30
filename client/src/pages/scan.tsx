@@ -220,24 +220,53 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
     scanMutation.mutate(code);
   }, [scannedItems, scanMutation, toast]);
 
+  const scanBufferRef = useRef("");
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && scanInput.trim()) {
       e.preventDefault();
       handleScan(scanInput.trim());
       setScanInput("");
+      scanBufferRef.current = "";
     }
   };
 
   useEffect(() => {
     inputRef.current?.focus();
-    
+
+    const handleGlobalKeydown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
+        return;
+      }
+
+      if (e.key === "Enter") {
+        const code = scanBufferRef.current.trim();
+        if (code && canScan) {
+          handleScan(code);
+          setScanInput("");
+          scanBufferRef.current = "";
+        }
+        return;
+      }
+
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        scanBufferRef.current += e.key;
+        setScanInput(scanBufferRef.current);
+        inputRef.current?.focus();
+      }
+    };
+
     const handleGlobalClick = () => {
       inputRef.current?.focus();
     };
-    
+
+    document.addEventListener("keydown", handleGlobalKeydown);
     document.addEventListener("click", handleGlobalClick);
-    return () => document.removeEventListener("click", handleGlobalClick);
-  }, []);
+    return () => {
+      document.removeEventListener("keydown", handleGlobalKeydown);
+      document.removeEventListener("click", handleGlobalClick);
+    };
+  }, [canScan, handleScan]);
 
   const successCount = scannedItems.filter((s) => s.status === "success").length;
   const errorCount = scannedItems.filter((s) => s.status === "error").length;
@@ -361,7 +390,7 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
               <Input
                 ref={inputRef}
                 value={scanInput}
-                onChange={(e) => setScanInput(e.target.value)}
+                onChange={(e) => { setScanInput(e.target.value); scanBufferRef.current = e.target.value; }}
                 onKeyDown={handleKeyDown}
                 placeholder={canScan ? "Scan or type garment ID..." : "Select a factory first"}
                 className="text-lg h-14 font-mono"
