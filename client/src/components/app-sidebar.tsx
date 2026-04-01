@@ -8,6 +8,7 @@ import {
   Settings,
   LogOut,
   Building2,
+  Receipt,
 } from "lucide-react";
 import {
   Sidebar,
@@ -44,6 +45,7 @@ export function AppSidebar({ userProfile, isFactorySession, isAdminSession }: Ap
     { title: "Garments", url: "/garments", icon: Shirt },
     { title: "Scanning", url: "/scan", icon: ScanLine },
     { title: "Reports", url: "/reports", icon: FileText },
+    { title: "Invoices", url: "/invoices", icon: Receipt },
   ];
 
   const factoryItems = [

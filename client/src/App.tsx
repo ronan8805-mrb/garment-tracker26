@@ -17,6 +17,7 @@ import FactoriesPage from "@/pages/factories";
 import GarmentsPage from "@/pages/garments";
 import ScanPage from "@/pages/scan";
 import ReportsPage from "@/pages/reports";
+import InvoicesPage from "@/pages/invoices";
 import { initWebSocket, closeWebSocket } from "@/lib/websocket";
 
 function AuthenticatedLayout({ children, isFactorySession, isAdminSession }: { children: React.ReactNode; isFactorySession?: boolean; isAdminSession?: boolean }) {
@@ -69,6 +70,9 @@ function AuthenticatedRouter({ isFactorySession, isAdminSession }: { isFactorySe
           <ScanPage userProfile={effectiveProfile} />
         </Route>
         <Route path="/reports" component={ReportsPage} />
+        {isAdmin && (
+          <Route path="/invoices" component={InvoicesPage} />
+        )}
         <Route component={NotFound} />
       </Switch>
     </AuthenticatedLayout>

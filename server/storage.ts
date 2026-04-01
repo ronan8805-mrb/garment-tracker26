@@ -4,6 +4,8 @@ import {
   scanEvents,
   scanBatches,
   userProfiles,
+  invoices,
+  invoiceLines,
   type Factory,
   type InsertFactory,
   type Garment,
@@ -14,6 +16,10 @@ import {
   type InsertScanBatch,
   type UserProfile,
   type InsertUserProfile,
+  type Invoice,
+  type InsertInvoice,
+  type InvoiceLine,
+  type InsertInvoiceLine,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -61,6 +67,15 @@ export interface IStorage {
   getAllUserProfiles(): Promise<UserProfile[]>;
   createUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
   updateUserProfile(userId: string, profile: Partial<InsertUserProfile>): Promise<UserProfile | undefined>;
+
+  // Invoice operations
+  getInvoices(factoryId?: string): Promise<Invoice[]>;
+  getInvoice(id: string): Promise<Invoice | undefined>;
+  getInvoiceLines(invoiceId: string): Promise<InvoiceLine[]>;
+  getNextInvoiceNumber(): Promise<string>;
+  createInvoice(invoice: InsertInvoice, lines: InsertInvoiceLine[]): Promise<Invoice>;
+  updateInvoice(id: string, invoice: Partial<InsertInvoice>, lines?: InsertInvoiceLine[]): Promise<Invoice | undefined>;
+  deleteInvoice(id: string): Promise<void>;
 
   // Dashboard stats
   getAdminDashboardStats(): Promise<{
@@ -324,6 +339,70 @@ export class DatabaseStorage implements IStorage {
       .where(eq(userProfiles.userId, userId))
       .returning();
     return updated;
+  }
+
+  // Invoice operations
+  async getInvoices(factoryId?: string): Promise<Invoice[]> {
+    if (factoryId) {
+      return db.select().from(invoices).where(eq(invoices.factoryId, factoryId)).orderBy(desc(invoices.createdAt));
+    }
+    return db.select().from(invoices).orderBy(desc(invoices.createdAt));
+  }
+
+  async getInvoice(id: string): Promise<Invoice | undefined> {
+    const [invoice] = await db.select().from(invoices).where(eq(invoices.id, id));
+    return invoice;
+  }
+
+  async getInvoiceLines(invoiceId: string): Promise<InvoiceLine[]> {
+    return db.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, invoiceId));
+  }
+
+  async getNextInvoiceNumber(): Promise<string> {
+    const [result] = await db
+      .select({ maxNum: sql<string>`max(${invoices.invoiceNumber})` })
+      .from(invoices);
+    const last = result?.maxNum;
+    if (!last) return "INV-0001";
+    const num = parseInt(last.replace("INV-", ""), 10);
+    return `INV-${String(num + 1).padStart(4, "0")}`;
+  }
+
+  async createInvoice(invoice: InsertInvoice, lines: InsertInvoiceLine[]): Promise<Invoice> {
+    return await db.transaction(async (tx) => {
+      const [created] = await tx.insert(invoices).values(invoice).returning();
+      if (lines.length > 0) {
+        const linesWithId = lines.map((l) => ({ ...l, invoiceId: created.id }));
+        await tx.insert(invoiceLines).values(linesWithId);
+      }
+      return created;
+    });
+  }
+
+  async updateInvoice(id: string, invoice: Partial<InsertInvoice>, lines?: InsertInvoiceLine[]): Promise<Invoice | undefined> {
+    return await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(invoices)
+        .set({ ...invoice, updatedAt: new Date() })
+        .where(eq(invoices.id, id))
+        .returning();
+      if (!updated) return undefined;
+      if (lines) {
+        await tx.delete(invoiceLines).where(eq(invoiceLines.invoiceId, id));
+        if (lines.length > 0) {
+          const linesWithId = lines.map((l) => ({ ...l, invoiceId: id }));
+          await tx.insert(invoiceLines).values(linesWithId);
+        }
+      }
+      return updated;
+    });
+  }
+
+  async deleteInvoice(id: string): Promise<void> {
+    await db.transaction(async (tx) => {
+      await tx.delete(invoiceLines).where(eq(invoiceLines.invoiceId, id));
+      await tx.delete(invoices).where(eq(invoices.id, id));
+    });
   }
 
   // Dashboard stats

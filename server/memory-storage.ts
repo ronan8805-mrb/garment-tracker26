@@ -10,6 +10,10 @@ import type {
   InsertScanBatch,
   UserProfile,
   InsertUserProfile,
+  Invoice,
+  InsertInvoice,
+  InvoiceLine,
+  InsertInvoiceLine,
 } from "@shared/schema";
 import type { IStorage } from "./storage";
 
@@ -61,6 +65,9 @@ export class MemoryStorage implements IStorage {
   private _scanEvents: ScanEvent[] = [];
   private _scanBatches: ScanBatch[] = [];
   private _userProfiles: UserProfile[] = [...seedUserProfiles];
+  private _invoices: Invoice[] = [];
+  private _invoiceLines: InvoiceLine[] = [];
+  private _invoiceCounter = 0;
 
   // ---- Factories -----------------------------------------------------------
 
@@ -352,6 +359,89 @@ export class MemoryStorage implements IStorage {
     if (idx === -1) return undefined;
     this._userProfiles[idx] = { ...this._userProfiles[idx], ...profile };
     return this._userProfiles[idx];
+  }
+
+  // ---- Invoices ------------------------------------------------------------
+
+  async getInvoices(factoryId?: string): Promise<Invoice[]> {
+    const list = factoryId
+      ? this._invoices.filter((i) => i.factoryId === factoryId)
+      : [...this._invoices];
+    return list.sort(
+      (a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)
+    );
+  }
+
+  async getInvoice(id: string): Promise<Invoice | undefined> {
+    return this._invoices.find((i) => i.id === id);
+  }
+
+  async getInvoiceLines(invoiceId: string): Promise<InvoiceLine[]> {
+    return this._invoiceLines.filter((l) => l.invoiceId === invoiceId);
+  }
+
+  async getNextInvoiceNumber(): Promise<string> {
+    this._invoiceCounter++;
+    return `INV-${String(this._invoiceCounter).padStart(4, "0")}`;
+  }
+
+  async createInvoice(invoice: InsertInvoice, lines: InsertInvoiceLine[]): Promise<Invoice> {
+    const record: Invoice = {
+      id: uuid(),
+      invoiceNumber: invoice.invoiceNumber,
+      factoryId: invoice.factoryId,
+      invoiceDate: invoice.invoiceDate ?? now(),
+      dueDate: invoice.dueDate,
+      customerName: invoice.customerName,
+      customerAddress: invoice.customerAddress ?? null,
+      deliveryAddress: invoice.deliveryAddress ?? null,
+      subtotal: invoice.subtotal ?? 0,
+      taxRate: invoice.taxRate ?? "13.5",
+      taxAmount: invoice.taxAmount ?? 0,
+      total: invoice.total ?? 0,
+      notes: invoice.notes ?? null,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    this._invoices.push(record);
+    for (const l of lines) {
+      this._invoiceLines.push({
+        id: uuid(),
+        invoiceId: record.id,
+        batchId: l.batchId ?? null,
+        description: l.description,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice ?? 80,
+        amount: l.amount,
+      });
+    }
+    return record;
+  }
+
+  async updateInvoice(id: string, invoice: Partial<InsertInvoice>, lines?: InsertInvoiceLine[]): Promise<Invoice | undefined> {
+    const idx = this._invoices.findIndex((i) => i.id === id);
+    if (idx === -1) return undefined;
+    this._invoices[idx] = { ...this._invoices[idx], ...invoice, updatedAt: now() };
+    if (lines) {
+      this._invoiceLines = this._invoiceLines.filter((l) => l.invoiceId !== id);
+      for (const l of lines) {
+        this._invoiceLines.push({
+          id: uuid(),
+          invoiceId: id,
+          batchId: l.batchId ?? null,
+          description: l.description,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice ?? 80,
+          amount: l.amount,
+        });
+      }
+    }
+    return this._invoices[idx];
+  }
+
+  async deleteInvoice(id: string): Promise<void> {
+    this._invoiceLines = this._invoiceLines.filter((l) => l.invoiceId !== id);
+    this._invoices = this._invoices.filter((i) => i.id !== id);
   }
 
   // ---- Dashboard -----------------------------------------------------------

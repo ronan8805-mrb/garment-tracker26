@@ -1215,6 +1215,334 @@ export async function registerRoutes(
     }
   });
 
+  // ========== INVOICE ROUTES ==========
+
+  // List invoices
+  app.get("/api/invoices", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      if (!req.isAdminSession) return res.status(403).json({ message: "Admin only" });
+      const factoryId = req.query.factory as string | undefined;
+      const list = await storage.getInvoices(factoryId);
+      res.json(list);
+    } catch (error) {
+      console.error("Error fetching invoices:", error);
+      res.status(500).json({ message: "Failed to fetch invoices" });
+    }
+  });
+
+  // Get single invoice with lines
+  app.get("/api/invoices/:id", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      if (!req.isAdminSession) return res.status(403).json({ message: "Admin only" });
+      const invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+      const lines = await storage.getInvoiceLines(invoice.id);
+      const factory = await storage.getFactory(invoice.factoryId);
+      res.json({ ...invoice, lines, factoryName: factory?.name || "Unknown" });
+    } catch (error) {
+      console.error("Error fetching invoice:", error);
+      res.status(500).json({ message: "Failed to fetch invoice" });
+    }
+  });
+
+  // Create invoice from batch IDs
+  app.post("/api/invoices", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      if (!req.isAdminSession) return res.status(403).json({ message: "Admin only" });
+
+      const { factoryId, batchIds, customerName, customerAddress, deliveryAddress, unitPrice, taxRate, notes } = req.body;
+
+      if (!factoryId || !batchIds || !Array.isArray(batchIds) || batchIds.length === 0) {
+        return res.status(400).json({ message: "factoryId and batchIds are required" });
+      }
+
+      const factory = await storage.getFactory(factoryId);
+      if (!factory) return res.status(404).json({ message: "Factory not found" });
+
+      const priceInCents = Math.round((unitPrice ?? 0.80) * 100);
+      const tax = parseFloat(taxRate ?? "13.5");
+
+      const lines: { invoiceId: string; batchId: string; description: string; quantity: number; unitPrice: number; amount: number }[] = [];
+
+      for (const batchId of batchIds) {
+        const batch = await storage.getBatch(batchId);
+        if (!batch) continue;
+        const batchDate = batch.createdAt
+          ? new Date(batch.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" })
+          : "Unknown";
+        const desc = `${batchDate} - GARMENTS`;
+        const qty = batch.totalItems;
+        const amt = qty * priceInCents;
+        lines.push({
+          invoiceId: "",
+          batchId: batch.id,
+          description: desc,
+          quantity: qty,
+          unitPrice: priceInCents,
+          amount: amt,
+        });
+      }
+
+      const subtotalCents = lines.reduce((sum, l) => sum + l.amount, 0);
+      const taxAmountCents = Math.round(subtotalCents * (tax / 100));
+      const totalCents = subtotalCents + taxAmountCents;
+
+      const invoiceNumber = await storage.getNextInvoiceNumber();
+      const invoiceDate = new Date();
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 14);
+
+      const invoice = await storage.createInvoice(
+        {
+          invoiceNumber,
+          factoryId,
+          invoiceDate,
+          dueDate,
+          customerName: customerName || factory.name,
+          customerAddress: customerAddress || factory.location || "",
+          deliveryAddress: deliveryAddress || "",
+          subtotal: subtotalCents,
+          taxRate: String(tax),
+          taxAmount: taxAmountCents,
+          total: totalCents,
+          notes: notes || null,
+        },
+        lines
+      );
+
+      const savedLines = await storage.getInvoiceLines(invoice.id);
+      res.json({ ...invoice, lines: savedLines });
+    } catch (error) {
+      console.error("Error creating invoice:", error);
+      res.status(500).json({ message: "Failed to create invoice" });
+    }
+  });
+
+  // Update invoice (manual edits)
+  app.put("/api/invoices/:id", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      if (!req.isAdminSession) return res.status(403).json({ message: "Admin only" });
+
+      const { customerName, customerAddress, deliveryAddress, invoiceDate, dueDate, taxRate, notes, lines } = req.body;
+
+      let processedLines: { invoiceId: string; batchId: string | null; description: string; quantity: number; unitPrice: number; amount: number }[] | undefined;
+      if (lines && Array.isArray(lines)) {
+        const tax = parseFloat(taxRate ?? "13.5");
+        let subtotalCents = 0;
+        processedLines = lines.map((l: any) => {
+          const qty = parseInt(l.quantity, 10) || 0;
+          const up = Math.round(parseFloat(l.unitPrice) * 100) || 80;
+          const amt = qty * up;
+          subtotalCents += amt;
+          return {
+            invoiceId: req.params.id,
+            batchId: l.batchId || null,
+            description: l.description,
+            quantity: qty,
+            unitPrice: up,
+            amount: amt,
+          };
+        });
+        const taxAmountCents = Math.round(subtotalCents * (tax / 100));
+        const totalCents = subtotalCents + taxAmountCents;
+
+        const updated = await storage.updateInvoice(
+          req.params.id,
+          {
+            customerName,
+            customerAddress,
+            deliveryAddress,
+            invoiceDate: invoiceDate ? new Date(invoiceDate) : undefined,
+            dueDate: dueDate ? new Date(dueDate) : undefined,
+            taxRate: String(tax),
+            notes,
+            subtotal: subtotalCents,
+            taxAmount: taxAmountCents,
+            total: totalCents,
+          },
+          processedLines
+        );
+        if (!updated) return res.status(404).json({ message: "Invoice not found" });
+        const savedLines = await storage.getInvoiceLines(updated.id);
+        return res.json({ ...updated, lines: savedLines });
+      }
+
+      const updated = await storage.updateInvoice(req.params.id, {
+        customerName,
+        customerAddress,
+        deliveryAddress,
+        invoiceDate: invoiceDate ? new Date(invoiceDate) : undefined,
+        dueDate: dueDate ? new Date(dueDate) : undefined,
+        taxRate,
+        notes,
+      });
+      if (!updated) return res.status(404).json({ message: "Invoice not found" });
+      const savedLines = await storage.getInvoiceLines(updated.id);
+      res.json({ ...updated, lines: savedLines });
+    } catch (error) {
+      console.error("Error updating invoice:", error);
+      res.status(500).json({ message: "Failed to update invoice" });
+    }
+  });
+
+  // Delete invoice
+  app.delete("/api/invoices/:id", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      if (!req.isAdminSession) return res.status(403).json({ message: "Admin only" });
+      await storage.deleteInvoice(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting invoice:", error);
+      res.status(500).json({ message: "Failed to delete invoice" });
+    }
+  });
+
+  // Generate invoice PDF
+  app.get("/api/invoices/:id/pdf", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      if (!req.isAdminSession) return res.status(403).json({ message: "Admin only" });
+
+      const invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+      const lines = await storage.getInvoiceLines(invoice.id);
+      const factory = await storage.getFactory(invoice.factoryId);
+
+      const doc = new PDFDocument({ size: "A4", margin: 50 });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename="${invoice.invoiceNumber}.pdf"`);
+      doc.pipe(res);
+
+      const fmt = (cents: number) => (cents / 100).toFixed(2);
+      const fmtDate = (d: Date | string | null) => {
+        if (!d) return "-";
+        const dt = typeof d === "string" ? new Date(d) : d;
+        return dt.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+      };
+
+      // ---- PAYMENT ADVICE SLIP ----
+      doc.rect(50, 50, 495, 130).lineWidth(0.5).stroke("#999");
+      doc.fontSize(10).font("Helvetica-Bold").fillColor("#333").text("PAYMENT ADVICE", 60, 60);
+      doc.fontSize(8).font("Helvetica").fillColor("#555");
+      doc.text("To: Mr. Bubbles Express Ltd", 60, 78);
+      doc.text("Unit 5c Aston Green Aston Village", 60, 90);
+      doc.text("DROGHEDA LOUTH", 60, 102);
+      doc.text("IRELAND", 60, 114);
+
+      doc.font("Helvetica-Bold").text("Customer", 320, 60);
+      doc.font("Helvetica").text(invoice.customerName, 320, 72);
+      doc.font("Helvetica-Bold").text("Invoice Number", 320, 90);
+      doc.font("Helvetica").text(invoice.invoiceNumber, 320, 102);
+      doc.font("Helvetica-Bold").text("Amount Due", 320, 118);
+      doc.font("Helvetica").text(`€${fmt(invoice.total)}`, 320, 130);
+      doc.font("Helvetica-Bold").text("Due Date", 320, 146);
+      doc.font("Helvetica").text(fmtDate(invoice.dueDate), 320, 158);
+
+      doc.fontSize(6).fillColor("#888").text(
+        "Company Registration No: 3953796RH. Registered Office: Unit 5c Aston Green Aston Village, Drogheda, Louth, Ireland.",
+        60, 185, { width: 480, align: "center" }
+      );
+
+      // ---- MAIN INVOICE ----
+      const invoiceY = 210;
+      doc.fontSize(20).font("Helvetica-Bold").fillColor("#000").text("INVOICE", 50, invoiceY);
+      doc.moveTo(50, invoiceY + 25).lineTo(545, invoiceY + 25).lineWidth(1).stroke("#000");
+
+      // Customer + Company columns
+      const colY = invoiceY + 35;
+      doc.fontSize(10).font("Helvetica-Bold").fillColor("#000").text(invoice.customerName, 50, colY);
+      doc.fontSize(8).font("Helvetica").fillColor("#555");
+
+      doc.font("Helvetica-Bold").text("Invoice Date", 320, colY);
+      doc.font("Helvetica").text(fmtDate(invoice.invoiceDate), 420, colY);
+      doc.font("Helvetica-Bold").text("Invoice Number", 320, colY + 16);
+      doc.font("Helvetica").text(invoice.invoiceNumber, 420, colY + 16);
+
+      doc.fontSize(8).font("Helvetica").fillColor("#555");
+      doc.text("Mr. Bubbles Express Ltd", 50, colY + 20);
+      doc.text("Unit 5c Aston Green Aston Village", 50, colY + 32);
+      doc.text("DROGHEDA LOUTH", 50, colY + 44);
+      doc.text("IRELAND", 50, colY + 56);
+
+      if (invoice.deliveryAddress) {
+        doc.font("Helvetica-Bold").text("Delivery Address", 320, colY + 40);
+        const addrLines = invoice.deliveryAddress.split("\n");
+        let addrY = colY + 52;
+        doc.font("Helvetica");
+        for (const al of addrLines) {
+          doc.text(al, 320, addrY);
+          addrY += 12;
+        }
+      }
+
+      // Line items table
+      const tableY = colY + 80;
+      const colWidths = { desc: 200, qty: 65, price: 65, tax: 55, amount: 80 };
+      const tableX = 50;
+
+      doc.rect(tableX, tableY, 495, 18).fill("#333");
+      doc.fontSize(8).font("Helvetica-Bold").fillColor("#fff");
+      doc.text("Description", tableX + 5, tableY + 5);
+      doc.text("Quantity", tableX + colWidths.desc + 5, tableY + 5, { width: colWidths.qty, align: "right" });
+      doc.text("Unit Price", tableX + colWidths.desc + colWidths.qty + 5, tableY + 5, { width: colWidths.price, align: "right" });
+      doc.text("Tax", tableX + colWidths.desc + colWidths.qty + colWidths.price + 5, tableY + 5, { width: colWidths.tax, align: "right" });
+      doc.text("Amount EUR", tableX + colWidths.desc + colWidths.qty + colWidths.price + colWidths.tax + 5, tableY + 5, { width: colWidths.amount, align: "right" });
+
+      let rowY = tableY + 18;
+      const rowH = 20;
+
+      for (let i = 0; i < lines.length; i++) {
+        const l = lines[i];
+        if (i % 2 === 0) {
+          doc.rect(tableX, rowY, 495, rowH).fill("#f9f9f9");
+        }
+        doc.fontSize(8).font("Helvetica").fillColor("#000");
+        doc.text(l.description, tableX + 5, rowY + 6);
+        doc.text(String(l.quantity), tableX + colWidths.desc + 5, rowY + 6, { width: colWidths.qty, align: "right" });
+        doc.text(fmt(l.unitPrice), tableX + colWidths.desc + colWidths.qty + 5, rowY + 6, { width: colWidths.price, align: "right" });
+        doc.text(`${invoice.taxRate}%`, tableX + colWidths.desc + colWidths.qty + colWidths.price + 5, rowY + 6, { width: colWidths.tax, align: "right" });
+        doc.text(fmt(l.amount), tableX + colWidths.desc + colWidths.qty + colWidths.price + colWidths.tax + 5, rowY + 6, { width: colWidths.amount, align: "right" });
+        rowY += rowH;
+      }
+
+      // Totals
+      rowY += 10;
+      doc.moveTo(tableX + 320, rowY).lineTo(tableX + 495, rowY).stroke("#ccc");
+      rowY += 8;
+
+      doc.fontSize(9).font("Helvetica");
+      doc.text("Subtotal", tableX + 320, rowY);
+      doc.text(`€${fmt(invoice.subtotal)}`, tableX + 415, rowY, { width: colWidths.amount, align: "right" });
+      rowY += 16;
+      doc.text(`TOTAL SALES ${invoice.taxRate}%`, tableX + 320, rowY);
+      doc.text(`€${fmt(invoice.taxAmount)}`, tableX + 415, rowY, { width: colWidths.amount, align: "right" });
+      rowY += 20;
+      doc.fontSize(12).font("Helvetica-Bold");
+      doc.text("TOTAL EUR", tableX + 320, rowY);
+      doc.text(`€${fmt(invoice.total)}`, tableX + 415, rowY, { width: colWidths.amount, align: "right" });
+      rowY += 20;
+      doc.fontSize(9).font("Helvetica").fillColor("#555");
+      doc.text(`Due Date: ${fmtDate(invoice.dueDate)}`, tableX + 320, rowY);
+
+      if (invoice.notes) {
+        rowY += 30;
+        doc.fontSize(8).font("Helvetica-Bold").fillColor("#000").text("Notes:", tableX, rowY);
+        doc.font("Helvetica").fillColor("#555").text(invoice.notes, tableX, rowY + 12, { width: 400 });
+      }
+
+      // Footer
+      const footerY = doc.page.height - 50;
+      doc.fontSize(7).fillColor("#999").text(
+        "Mr Bubbles Express | 086 270 9299 | info@mrbubblesexpress.com",
+        50, footerY, { width: 495, align: "center" }
+      );
+
+      doc.end();
+    } catch (error) {
+      console.error("Error generating invoice PDF:", error);
+      res.status(500).json({ message: "Failed to generate invoice PDF" });
+    }
+  });
+
   return httpServer;
 }
 

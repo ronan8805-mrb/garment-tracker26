@@ -80,7 +80,60 @@ export const scanBatches = pgTable("scan_batches", {
   index("idx_scan_batches_created_at").on(table.createdAt),
 ]);
 
+// Invoices table
+export const invoices = pgTable("invoices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceNumber: varchar("invoice_number", { length: 20 }).notNull().unique(),
+  factoryId: varchar("factory_id").notNull(),
+  invoiceDate: timestamp("invoice_date").notNull().defaultNow(),
+  dueDate: timestamp("due_date").notNull(),
+  customerName: text("customer_name").notNull(),
+  customerAddress: text("customer_address"),
+  deliveryAddress: text("delivery_address"),
+  subtotal: integer("subtotal").notNull().default(0),
+  taxRate: varchar("tax_rate", { length: 10 }).notNull().default("13.5"),
+  taxAmount: integer("tax_amount").notNull().default(0),
+  total: integer("total").notNull().default(0),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_invoices_factory_id").on(table.factoryId),
+]);
+
+// Invoice line items
+export const invoiceLines = pgTable("invoice_lines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull(),
+  batchId: varchar("batch_id"),
+  description: text("description").notNull(),
+  quantity: integer("quantity").notNull(),
+  unitPrice: integer("unit_price").notNull().default(80),
+  amount: integer("amount").notNull(),
+}, (table) => [
+  index("idx_invoice_lines_invoice_id").on(table.invoiceId),
+]);
+
 // Relations
+export const invoicesRelations = relations(invoices, ({ one, many }) => ({
+  factory: one(factories, {
+    fields: [invoices.factoryId],
+    references: [factories.id],
+  }),
+  lines: many(invoiceLines),
+}));
+
+export const invoiceLinesRelations = relations(invoiceLines, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [invoiceLines.invoiceId],
+    references: [invoices.id],
+  }),
+  batch: one(scanBatches, {
+    fields: [invoiceLines.batchId],
+    references: [scanBatches.id],
+  }),
+}));
+
 export const factoriesRelations = relations(factories, ({ many }) => ({
   garments: many(garments),
   batches: many(scanBatches),
@@ -164,6 +217,16 @@ export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({
   createdAt: true,
 });
 
+export const insertInvoiceSchema = createInsertSchema(invoices).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertInvoiceLineSchema = createInsertSchema(invoiceLines).omit({
+  id: true,
+});
+
 // Bulk garment creation schema
 export const bulkGarmentSchema = z.object({
   factoryId: z.string(),
@@ -189,6 +252,12 @@ export type InsertScanBatch = z.infer<typeof insertScanBatchSchema>;
 
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
+
+export type Invoice = typeof invoices.$inferSelect;
+export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
+
+export type InvoiceLine = typeof invoiceLines.$inferSelect;
+export type InsertInvoiceLine = z.infer<typeof insertInvoiceLineSchema>;
 
 export type BulkGarmentInput = z.infer<typeof bulkGarmentSchema>;
 
