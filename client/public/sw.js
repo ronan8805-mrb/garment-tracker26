@@ -1,4 +1,4 @@
-const CACHE_NAME = "garment-tracker-v1";
+const CACHE_NAME = "garment-tracker-v2";
 const STATIC_ASSETS = [
   "/",
   "/mr-bubbles-logo.png",

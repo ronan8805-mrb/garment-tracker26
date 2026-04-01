@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -48,9 +48,7 @@ import {
   Plus,
   Search,
   Barcode,
-  Download,
   Trash2,
-  Factory,
   Building2,
   Filter,
 } from "lucide-react";
@@ -88,6 +86,12 @@ export default function GarmentsPage() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const { toast } = useToast();
   const { isAdminSession } = useAuth();
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const factoryParam = params.get("factory");
+    if (factoryParam) setFilterFactory(factoryParam);
+  }, []);
 
   const { data: factories } = useQuery<FactoryType[]>({
     queryKey: ["/api/factories"],

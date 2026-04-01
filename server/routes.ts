@@ -116,11 +116,13 @@ export async function registerRoutes(
 
   // Session logout endpoint (for both admin and factory)
   app.post("/api/factory/logout", (req, res) => {
-    (req.session as any).factoryId = undefined;
-    (req.session as any).factoryName = undefined;
-    (req.session as any).isFactoryUser = false;
-    (req.session as any).isAdmin = false;
-    res.json({ success: true });
+    req.session.destroy((err) => {
+      if (err) {
+        console.error("Session destroy error:", err);
+      }
+      res.clearCookie("connect.sid");
+      res.json({ success: true });
+    });
   });
 
   // Get current session (admin or factory)
@@ -795,7 +797,7 @@ export async function registerRoutes(
       doc.end();
     } catch (error) {
       console.error("Error generating report:", error);
-      res.status(500).json({ message: "Failed to generate report" });
+      if (!res.headersSent) res.status(500).json({ message: "Failed to generate report" });
     }
   });
 
@@ -1008,7 +1010,7 @@ export async function registerRoutes(
       doc.end();
     } catch (error) {
       console.error("Error generating date report:", error);
-      res.status(500).json({ message: "Failed to generate report" });
+      if (!res.headersSent) res.status(500).json({ message: "Failed to generate report" });
     }
   });
 
@@ -1141,7 +1143,7 @@ export async function registerRoutes(
       doc.end();
     } catch (error) {
       console.error("Error generating barcode list:", error);
-      res.status(500).json({ message: "Failed to generate barcode list" });
+      if (!res.headersSent) res.status(500).json({ message: "Failed to generate barcode list" });
     }
   });
 
@@ -1172,7 +1174,7 @@ export async function registerRoutes(
       generateBarcodePdf(res, garmentsList, title, filename);
     } catch (error) {
       console.error("Error generating batch barcodes:", error);
-      res.status(500).json({ message: "Failed to generate barcodes" });
+      if (!res.headersSent) res.status(500).json({ message: "Failed to generate barcodes" });
     }
   });
 
@@ -1211,7 +1213,7 @@ export async function registerRoutes(
       generateBarcodePdf(res, garmentsList, title, filename);
     } catch (error) {
       console.error("Error generating date barcodes:", error);
-      res.status(500).json({ message: "Failed to generate barcodes" });
+      if (!res.headersSent) res.status(500).json({ message: "Failed to generate barcodes" });
     }
   });
 
@@ -1266,7 +1268,7 @@ export async function registerRoutes(
 
       for (const batchId of batchIds) {
         const batch = await storage.getBatch(batchId);
-        if (!batch) continue;
+        if (!batch || batch.factoryId !== factoryId) continue;
         const batchDate = batch.createdAt
           ? new Date(batch.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" })
           : "Unknown";
@@ -1539,7 +1541,7 @@ export async function registerRoutes(
       doc.end();
     } catch (error) {
       console.error("Error generating invoice PDF:", error);
-      res.status(500).json({ message: "Failed to generate invoice PDF" });
+      if (!res.headersSent) res.status(500).json({ message: "Failed to generate invoice PDF" });
     }
   });
 

@@ -74,7 +74,6 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
   const [scanInput, setScanInput] = useState("");
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-  const [batchId, setBatchId] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [pendingCount, setPendingCount] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -168,9 +167,9 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
       });
     },
     onSuccess: (response: any) => {
-      setBatchId(response.batchId);
       queryClient.invalidateQueries({ queryKey: ["/api/garments"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/admin"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/factory"] });
       
       toast({
         title: "Batch completed",

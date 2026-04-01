@@ -294,13 +294,31 @@ export class DatabaseStorage implements IStorage {
         const [garment] = await tx.select().from(garments).where(eq(garments.garmentId, gId));
         if (!garment) continue;
 
-        await tx.insert(scanEvents).values({
-          garmentId: garment.id,
-          location,
-          direction,
-          userId,
-          batchId: batch.id,
-        });
+        const [existingScan] = await tx
+          .select()
+          .from(scanEvents)
+          .where(
+            and(
+              eq(scanEvents.garmentId, garment.id),
+              eq(scanEvents.location, location),
+              eq(scanEvents.direction, direction),
+              sql`${scanEvents.batchId} IS NULL`
+            )
+          )
+          .orderBy(desc(scanEvents.scannedAt))
+          .limit(1);
+
+        if (existingScan) {
+          await tx.update(scanEvents).set({ batchId: batch.id }).where(eq(scanEvents.id, existingScan.id));
+        } else {
+          await tx.insert(scanEvents).values({
+            garmentId: garment.id,
+            location,
+            direction,
+            userId,
+            batchId: batch.id,
+          });
+        }
 
         const newStatus = location === "factory" ? "at_factory" : "at_laundry";
         await tx.update(garments).set({ status: newStatus }).where(eq(garments.id, garment.id));

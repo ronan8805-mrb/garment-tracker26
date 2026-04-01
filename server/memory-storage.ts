@@ -313,13 +313,27 @@ export class MemoryStorage implements IStorage {
       const garment = this._garments.find((g) => g.garmentId === gId);
       if (!garment) continue;
 
-      await this.createScanEvent({
-        garmentId: garment.id,
-        location,
-        direction,
-        userId,
-        batchId: batch.id,
-      });
+      const existingScan = [...this._scanEvents]
+        .filter(
+          (e) =>
+            e.garmentId === garment.id &&
+            e.location === location &&
+            e.direction === direction &&
+            !e.batchId
+        )
+        .sort((a, b) => (b.scannedAt?.getTime() ?? 0) - (a.scannedAt?.getTime() ?? 0))[0];
+
+      if (existingScan) {
+        existingScan.batchId = batch.id;
+      } else {
+        await this.createScanEvent({
+          garmentId: garment.id,
+          location,
+          direction,
+          userId,
+          batchId: batch.id,
+        });
+      }
 
       const newStatus = location === "factory" ? "at_factory" : "at_laundry";
       await this.updateGarmentStatus(garment.id, newStatus);

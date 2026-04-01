@@ -60,11 +60,7 @@ export async function getPendingCount(): Promise<number> {
 
 export async function markScanSynced(id: string): Promise<void> {
   const db = await getDb();
-  const scan = await db.get(STORE_NAME, id);
-  if (scan) {
-    scan.synced = true;
-    await db.put(STORE_NAME, scan);
-  }
+  await db.delete(STORE_NAME, id);
 }
 
 export async function syncPendingScans(): Promise<{ synced: number; failed: number }> {

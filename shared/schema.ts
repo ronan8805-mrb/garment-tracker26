@@ -62,6 +62,7 @@ export const scanEvents = pgTable("scan_events", {
   index("idx_scan_events_garment_id").on(table.garmentId),
   index("idx_scan_events_batch_id").on(table.batchId),
   index("idx_scan_events_scanned_at").on(table.scannedAt),
+  index("idx_scan_events_client_scan_id").on(table.clientScanId),
 ]);
 
 // Scan batches table
@@ -112,6 +113,7 @@ export const invoiceLines = pgTable("invoice_lines", {
   amount: integer("amount").notNull(),
 }, (table) => [
   index("idx_invoice_lines_invoice_id").on(table.invoiceId),
+  index("idx_invoice_lines_batch_id").on(table.batchId),
 ]);
 
 // Relations

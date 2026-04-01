@@ -5,7 +5,6 @@ import {
   Shirt,
   ScanLine,
   FileText,
-  Settings,
   LogOut,
   Building2,
   Receipt,
