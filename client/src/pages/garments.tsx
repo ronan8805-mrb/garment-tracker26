@@ -51,6 +51,8 @@ import {
   Trash2,
   Building2,
   Filter,
+  Calendar,
+  X,
 } from "lucide-react";
 import type { Factory as FactoryType, Garment } from "@shared/schema";
 
@@ -84,6 +86,7 @@ export default function GarmentsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterFactory, setFilterFactory] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterDate, setFilterDate] = useState<string>("");
   const { toast } = useToast();
   const { isAdminSession } = useAuth();
 
@@ -127,7 +130,9 @@ export default function GarmentsPage() {
       g.garmentType.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFactory = filterFactory === "all" || g.factoryId === filterFactory;
     const matchesStatus = filterStatus === "all" || g.status === filterStatus;
-    return matchesSearch && matchesFactory && matchesStatus;
+    const matchesDate = !filterDate || (g.createdAt &&
+      new Date(g.createdAt).toLocaleDateString("en-CA") === filterDate);
+    return matchesSearch && matchesFactory && matchesStatus && matchesDate;
   });
 
   const getFactoryName = (factoryId: string) => {
@@ -206,6 +211,23 @@ export default function GarmentsPage() {
                 <SelectItem value="at_laundry">At Laundry</SelectItem>
               </SelectContent>
             </Select>
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                type="date"
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+                className="pl-9 w-[180px]"
+              />
+              {filterDate && (
+                <button
+                  onClick={() => setFilterDate("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
