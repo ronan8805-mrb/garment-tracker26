@@ -19,19 +19,12 @@
     "win": {
       "target": [
         {
-          "target": "nsis",
+          "target": "portable",
           "arch": ["x64"]
         }
       ],
-      "icon": "icon.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": true,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "LaundryTrack"
+      "icon": "icon.png",
+      "signAndEditExecutable": false
     },
     "files": [
       "main.js",

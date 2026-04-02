@@ -1,7 +1,7 @@
 const { app, BrowserWindow, Menu } = require("electron");
 const path = require("path");
 
-const PRODUCTION_URL = process.env.LAUNDRYTRACK_URL || "https://garment-tracker.up.railway.app";
+const PRODUCTION_URL = process.env.LAUNDRYTRACK_URL || "https://garment-tracker26-production.up.railway.app";
 
 let mainWindow;
 

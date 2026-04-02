@@ -5,10 +5,7 @@ const config: CapacitorConfig = {
   appName: "LaundryTrack",
   webDir: "dist/public",
   server: {
-    // In production, point to your Railway URL:
-    // url: "https://garment-tracker.up.railway.app",
-    // For local development, use the local server:
-    // url: "http://192.168.1.100:5000",
+    url: "https://garment-tracker26-production.up.railway.app",
     cleartext: false,
     androidScheme: "https",
   },
