@@ -532,13 +532,17 @@ export async function registerRoutes(
         return uid;
       };
 
-      const items = [];
       const seen = new Set<string>();
-      for (const ev of scanEventsData) {
-        const garment = await storage.getGarment(ev.garmentId);
+      const deduped = scanEventsData.filter((ev) => {
         const dupKey = `${ev.garmentId}:${ev.direction}:${ev.location}`;
-        const isDup = seen.has(dupKey);
+        if (seen.has(dupKey)) return false;
         seen.add(dupKey);
+        return true;
+      });
+
+      const items = [];
+      for (const ev of deduped) {
+        const garment = await storage.getGarment(ev.garmentId);
         items.push({
           garmentId: garment?.garmentId || ev.garmentId,
           garmentType: garment?.garmentType || "-",
@@ -547,7 +551,7 @@ export async function registerRoutes(
           location: ev.location,
           scannedAt: ev.scannedAt,
           scannedBy: resolveScanner(ev.userId),
-          duplicate: isDup,
+          duplicate: false,
         });
       }
 
@@ -598,16 +602,20 @@ export async function registerRoutes(
         return uid;
       };
 
-      const inCount = scanEventsData.filter((e) => e.direction === "IN").length;
-      const outCount = scanEventsData.filter((e) => e.direction === "OUT").length;
+      const seen = new Set<string>();
+      const deduped = scanEventsData.filter((ev) => {
+        const dupKey = `${ev.garmentId}:${ev.direction}:${ev.location}`;
+        if (seen.has(dupKey)) return false;
+        seen.add(dupKey);
+        return true;
+      });
+
+      const inCount = deduped.filter((e) => e.direction === "IN").length;
+      const outCount = deduped.filter((e) => e.direction === "OUT").length;
 
       const items = [];
-      const seen = new Set<string>();
-      for (const ev of scanEventsData) {
+      for (const ev of deduped) {
         const garment = await storage.getGarment(ev.garmentId);
-        const dupKey = `${ev.garmentId}:${ev.direction}:${ev.location}`;
-        const isDup = seen.has(dupKey);
-        seen.add(dupKey);
         items.push({
           garmentId: garment?.garmentId || ev.garmentId,
           garmentType: garment?.garmentType || "-",
@@ -616,14 +624,14 @@ export async function registerRoutes(
           location: ev.location,
           scannedAt: ev.scannedAt,
           scannedBy: resolveScanner(ev.userId),
-          duplicate: isDup,
+          duplicate: false,
         });
       }
 
       res.json({
         date,
         factoryName,
-        totalScans: scanEventsData.length,
+        totalScans: deduped.length,
         inCount,
         outCount,
         items,
@@ -648,7 +656,14 @@ export async function registerRoutes(
       }
 
       const factory = await storage.getFactory(batch.factoryId);
-      const scanEventsData = await storage.getScanEventsByBatchId(batch.id);
+      const rawScanEvents = await storage.getScanEventsByBatchId(batch.id);
+      const batchSeen = new Set<string>();
+      const scanEventsData = rawScanEvents.filter((ev) => {
+        const dupKey = `${ev.garmentId}:${ev.direction}:${ev.location}`;
+        if (batchSeen.has(dupKey)) return false;
+        batchSeen.add(dupKey);
+        return true;
+      });
 
       // Create PDF document
       const doc = new PDFDocument({ size: "A4", margin: 50 });
@@ -707,7 +722,7 @@ export async function registerRoutes(
       doc.font("Helvetica").text(`Scanned By: `, { continued: true }).font("Helvetica-Bold").text(scannedByName);
       doc.font("Helvetica").text(`Location: `, { continued: true }).font("Helvetica-Bold").text(batch.location);
       doc.font("Helvetica").text(`Direction: `, { continued: true }).font("Helvetica-Bold").text(batch.direction === "IN" ? "Scan IN" : "Scan OUT");
-      doc.font("Helvetica").text(`Total Items: `, { continued: true }).font("Helvetica-Bold").text(String(batch.totalItems || 0));
+      doc.font("Helvetica").text(`Total Items: `, { continued: true }).font("Helvetica-Bold").text(String(scanEventsData.length));
       doc.moveDown(0.5);
       doc.font("Helvetica").text(`Created: `, { continued: true }).text(fmtDateTime(batch.createdAt));
       doc.text(`Completed: `, { continued: true }).text(batch.completedAt ? fmtDateTime(batch.completedAt) : "Pending");
@@ -715,22 +730,7 @@ export async function registerRoutes(
       doc.moveDown(1.5);
 
       if (scanEventsData.length > 0) {
-        const seenGarments = new Set<string>();
-        const duplicateGarments = new Set<string>();
-        for (const ev of scanEventsData) {
-          const dupKey = `${ev.garmentId}:${ev.direction}:${ev.location}`;
-          if (seenGarments.has(dupKey)) {
-            duplicateGarments.add(dupKey);
-          }
-          seenGarments.add(dupKey);
-        }
-
         doc.fontSize(12).font("Helvetica-Bold").text("Scanned Items");
-        if (duplicateGarments.size > 0) {
-          doc.fontSize(10).fillColor("#cc0000").font("Helvetica-Bold")
-            .text(`WARNING: ${duplicateGarments.size} duplicate garment(s) detected`, { align: "left" });
-          doc.fillColor("#000");
-        }
         doc.moveDown(0.5);
         
         const tableTop = doc.y;
@@ -738,14 +738,12 @@ export async function registerRoutes(
         const col2 = 80;
         const col3 = 250;
         const col4 = 360;
-        const col5 = 470;
         
         doc.fontSize(10).font("Helvetica-Bold");
         doc.text("#", col1, tableTop);
         doc.text("Garment ID", col2, tableTop);
         doc.text("Type / Size", col3, tableTop);
         doc.text("Scan Time", col4, tableTop);
-        doc.text("Flag", col5, tableTop);
         
         doc.moveDown(0.3);
         doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
@@ -754,7 +752,6 @@ export async function registerRoutes(
         doc.font("Helvetica").fontSize(9);
         let rowY = doc.y;
         const lineHeight = 14;
-        const seenInRows = new Set<string>();
         
         for (let i = 0; i < scanEventsData.length; i++) {
           const event = scanEventsData[i];
@@ -768,22 +765,10 @@ export async function registerRoutes(
           const displayId = garment?.garmentId || event.garmentId;
           const typeSize = garment ? `${garment.garmentType} / ${garment.size}` : "-";
           const scanTime = fmtDateTime(event.scannedAt);
-          const rowDupKey = `${event.garmentId}:${event.direction}:${event.location}`;
-          const isDup = seenInRows.has(rowDupKey);
-          seenInRows.add(rowDupKey);
-          
-          if (isDup) {
-            doc.fillColor("#cc0000");
-          }
           doc.text(String(i + 1), col1, rowY);
           doc.text(displayId, col2, rowY);
           doc.text(typeSize, col3, rowY);
           doc.text(scanTime, col4, rowY);
-          if (isDup) {
-            doc.font("Helvetica-Bold").text("DUPLICATE", col5, rowY);
-            doc.font("Helvetica");
-          }
-          doc.fillColor("#000");
           
           rowY += lineHeight;
         }
@@ -839,7 +824,14 @@ export async function registerRoutes(
         factoryId = req.factoryId;
       }
 
-      const scanEventsData = await storage.getScanEventsByDate(date, factoryId);
+      const rawScanEventsData = await storage.getScanEventsByDate(date, factoryId);
+      const dailySeen = new Set<string>();
+      const scanEventsData = rawScanEventsData.filter((ev) => {
+        const dupKey = `${ev.garmentId}:${ev.direction}:${ev.location}`;
+        if (dailySeen.has(dupKey)) return false;
+        dailySeen.add(dupKey);
+        return true;
+      });
 
       const factoryName = factoryId
         ? (await storage.getFactory(factoryId))?.name || "Unknown"
@@ -917,33 +909,17 @@ export async function registerRoutes(
       doc.moveDown(1.5);
 
       if (scanEventsData.length > 0) {
-        const seenGarments = new Set<string>();
-        const duplicateGarments = new Set<string>();
-        for (const ev of scanEventsData) {
-          const dupKey = `${ev.garmentId}:${ev.direction}:${ev.location}`;
-          if (seenGarments.has(dupKey)) {
-            duplicateGarments.add(dupKey);
-          }
-          seenGarments.add(dupKey);
-        }
-
         doc.fontSize(12).font("Helvetica-Bold").text("Scanned Items");
-        if (duplicateGarments.size > 0) {
-          doc.fontSize(10).fillColor("#cc0000").font("Helvetica-Bold")
-            .text(`WARNING: ${duplicateGarments.size} duplicate garment(s) detected`, { align: "left" });
-          doc.fillColor("#000");
-        }
         doc.moveDown(0.5);
 
         const tableTop = doc.y;
         const col1 = 40;
         const col2 = 55;
-        const col3 = 185;
-        const col4 = 260;
-        const col5 = 285;
-        const col6 = 335;
-        const col7 = 410;
-        const col8 = 480;
+        const col3 = 195;
+        const col4 = 270;
+        const col5 = 300;
+        const col6 = 355;
+        const col7 = 430;
 
         doc.fontSize(7).font("Helvetica-Bold");
         doc.text("#", col1, tableTop);
@@ -953,7 +929,6 @@ export async function registerRoutes(
         doc.text("Location", col5, tableTop);
         doc.text("Scanned By", col6, tableTop);
         doc.text("Time", col7, tableTop);
-        doc.text("Flag", col8, tableTop);
 
         doc.moveDown(0.3);
         doc.moveTo(40, doc.y).lineTo(555, doc.y).stroke();
@@ -962,7 +937,6 @@ export async function registerRoutes(
         doc.font("Helvetica").fontSize(6.5);
         let rowY = doc.y;
         const lineHeight = 12;
-        const seenInRows = new Set<string>();
 
         for (let i = 0; i < scanEventsData.length; i++) {
           const event = scanEventsData[i];
@@ -977,13 +951,6 @@ export async function registerRoutes(
           const typeSize = garment ? `${garment.garmentType} / ${garment.size}` : "-";
           const scanTime = fmtDT(event.scannedAt);
           const scannerName = resolveScanner(event.userId);
-          const rowDupKey = `${event.garmentId}:${event.direction}:${event.location}`;
-          const isDup = seenInRows.has(rowDupKey);
-          seenInRows.add(rowDupKey);
-
-          if (isDup) {
-            doc.fillColor("#cc0000");
-          }
           doc.text(String(i + 1), col1, rowY);
           doc.text(displayId, col2, rowY);
           doc.text(typeSize, col3, rowY);
@@ -991,11 +958,6 @@ export async function registerRoutes(
           doc.text(event.location, col5, rowY);
           doc.text(scannerName, col6, rowY);
           doc.text(scanTime, col7, rowY);
-          if (isDup) {
-            doc.font("Helvetica-Bold").text("DUPLICATE", col8, rowY);
-            doc.font("Helvetica");
-          }
-          doc.fillColor("#000");
 
           rowY += lineHeight;
         }

@@ -44,7 +44,6 @@ import {
   Barcode,
   CalendarDays,
   Eye,
-  AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import type { Factory, ScanBatch } from "@shared/schema";
@@ -768,14 +767,6 @@ export default function ReportsPage() {
                 </div>
               </div>
 
-              {dateReport.items.some((i) => i.duplicate) && (
-                <div className="flex items-center gap-2 bg-red-50 dark:bg-red-950/30 text-red-600 rounded-lg p-3 text-sm font-medium">
-                  <AlertTriangle className="w-4 h-4" />
-                  {dateReport.items.filter((i) => i.duplicate).length} duplicate
-                  garment(s) detected
-                </div>
-              )}
-
               <div className="rounded-md border">
                 <Table>
                   <TableHeader>
@@ -787,19 +778,11 @@ export default function ReportsPage() {
                       <TableHead>Location</TableHead>
                       <TableHead>Scanned By</TableHead>
                       <TableHead>Time</TableHead>
-                      <TableHead>Flag</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {dateReport.items.map((item, idx) => (
-                      <TableRow
-                        key={idx}
-                        className={
-                          item.duplicate
-                            ? "bg-red-50 dark:bg-red-950/20"
-                            : ""
-                        }
-                      >
+                      <TableRow key={idx}>
                         <TableCell className="text-muted-foreground">
                           {idx + 1}
                         </TableCell>
@@ -826,16 +809,6 @@ export default function ReportsPage() {
                           {item.scannedBy}
                         </TableCell>
                         <TableCell>{fmtTime(item.scannedAt)}</TableCell>
-                        <TableCell>
-                          {item.duplicate && (
-                            <Badge
-                              variant="destructive"
-                              className="text-xs"
-                            >
-                              DUPLICATE
-                            </Badge>
-                          )}
-                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -934,14 +907,6 @@ export default function ReportsPage() {
                 </div>
               </div>
 
-              {batchReport.items.some((i) => i.duplicate) && (
-                <div className="flex items-center gap-2 bg-red-50 dark:bg-red-950/30 text-red-600 rounded-lg p-3 text-sm font-medium">
-                  <AlertTriangle className="w-4 h-4" />
-                  {batchReport.items.filter((i) => i.duplicate).length}{" "}
-                  duplicate garment(s) detected
-                </div>
-              )}
-
               <div className="rounded-md border">
                 <Table>
                   <TableHeader>
@@ -951,19 +916,11 @@ export default function ReportsPage() {
                       <TableHead>Type / Size</TableHead>
                       <TableHead>Scanned By</TableHead>
                       <TableHead>Scan Time</TableHead>
-                      <TableHead>Flag</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {batchReport.items.map((item, idx) => (
-                      <TableRow
-                        key={idx}
-                        className={
-                          item.duplicate
-                            ? "bg-red-50 dark:bg-red-950/20"
-                            : ""
-                        }
-                      >
+                      <TableRow key={idx}>
                         <TableCell className="text-muted-foreground">
                           {idx + 1}
                         </TableCell>
@@ -978,16 +935,6 @@ export default function ReportsPage() {
                         </TableCell>
                         <TableCell>
                           {fmtDateTime(item.scannedAt)}
-                        </TableCell>
-                        <TableCell>
-                          {item.duplicate && (
-                            <Badge
-                              variant="destructive"
-                              className="text-xs"
-                            >
-                              DUPLICATE
-                            </Badge>
-                          )}
                         </TableCell>
                       </TableRow>
                     ))}
