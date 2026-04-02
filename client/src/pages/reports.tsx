@@ -95,6 +95,7 @@ export default function ReportsPage() {
   const [batchFactory, setBatchFactory] = useState<string>("all");
   const [batchDirection, setBatchDirection] = useState<string>("all");
   const [batchSearch, setBatchSearch] = useState("");
+  const [batchDate, setBatchDate] = useState<string>("");
 
   // Viewer state
   const [viewingDate, setViewingDate] = useState<string | null>(null);
@@ -121,10 +122,12 @@ export default function ReportsPage() {
 
   const { data: scanDates, isLoading: datesLoading } = useQuery<ScanDate[]>({
     queryKey: [dateQueryUrl],
+    staleTime: 30_000,
   });
 
   const { data: batches, isLoading: batchesLoading } = useQuery<ScanBatch[]>({
     queryKey: ["/api/batches"],
+    staleTime: 30_000,
   });
 
   // In-app date report viewer — passes factory filter
@@ -132,7 +135,7 @@ export default function ReportsPage() {
     queryKey: ["/api/scan-dates", viewingDate, "data", viewingDateFactory],
     queryFn: async () => {
       const params = viewingDateFactory ? `?factory=${viewingDateFactory}` : "";
-      const res = await fetch(`/api/scan-dates/${viewingDate}/data${params}`);
+      const res = await fetch(`/api/scan-dates/${viewingDate}/data${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load report");
       return res.json();
     },
@@ -143,7 +146,7 @@ export default function ReportsPage() {
   const { data: batchReport, isLoading: batchReportLoading } = useQuery<BatchReportData>({
     queryKey: ["/api/batches", viewingBatchId, "data"],
     queryFn: async () => {
-      const res = await fetch(`/api/batches/${viewingBatchId}/data`);
+      const res = await fetch(`/api/batches/${viewingBatchId}/data`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load report");
       return res.json();
     },
@@ -154,7 +157,13 @@ export default function ReportsPage() {
     const matchesSearch = b.batchNumber.toLowerCase().includes(batchSearch.toLowerCase());
     const matchesFactory = batchFactory === "all" || b.factoryId === batchFactory;
     const matchesDirection = batchDirection === "all" || b.direction === batchDirection;
-    return matchesSearch && matchesFactory && matchesDirection;
+    let matchesDate = true;
+    if (batchDate && b.createdAt) {
+      const d = new Date(b.createdAt);
+      const localDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      matchesDate = localDate === batchDate;
+    }
+    return matchesSearch && matchesFactory && matchesDirection && matchesDate;
   });
 
   const getFactoryName = (factoryId: string) =>
@@ -400,7 +409,26 @@ export default function ReportsPage() {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg">Batch Reports</CardTitle>
                   <div className="flex flex-wrap items-center gap-3 mt-4">
-                    <div className="relative flex-1 min-w-[200px] max-w-sm">
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                      <Input
+                        type="date"
+                        value={batchDate}
+                        onChange={(e) => setBatchDate(e.target.value)}
+                        className="pl-9 w-[180px]"
+                      />
+                    </div>
+                    {batchDate && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setBatchDate("")}
+                        className="text-muted-foreground"
+                      >
+                        Clear date
+                      </Button>
+                    )}
+                    <div className="relative flex-1 min-w-[160px] max-w-sm">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input
                         placeholder="Search batches..."
@@ -447,6 +475,12 @@ export default function ReportsPage() {
                         <SelectItem value="OUT">Sending (OUT)</SelectItem>
                       </SelectContent>
                     </Select>
+                    {batchDate && (
+                      <Badge variant="secondary" className="text-sm px-3 py-1">
+                        <Calendar className="w-3 h-3 mr-1" />
+                        {formatDate(batchDate)}: {filteredBatches?.length || 0} batch{(filteredBatches?.length || 0) !== 1 ? "es" : ""}
+                      </Badge>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -562,8 +596,9 @@ export default function ReportsPage() {
                       <p className="text-muted-foreground">
                         {batchSearch ||
                         batchFactory !== "all" ||
-                        batchDirection !== "all"
-                          ? "Try adjusting your filters"
+                        batchDirection !== "all" ||
+                        batchDate
+                          ? "Try adjusting your filters or date"
                           : isFactorySession
                             ? "Complete a scan batch to see your reports here"
                             : "Complete a scan batch to see it here"}

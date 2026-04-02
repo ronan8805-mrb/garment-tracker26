@@ -20,7 +20,7 @@ import {
   ArrowRight,
   Clock,
 } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import type { Factory as FactoryType, ScanBatch } from "@shared/schema";
 
 interface FactoryBreakdown {
@@ -45,6 +45,7 @@ interface DashboardStats {
 }
 
 export default function AdminDashboard() {
+  const [, navigate] = useLocation();
   const { data: stats, isLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/dashboard/admin"],
   });
@@ -128,17 +129,17 @@ export default function AdminDashboard() {
                   {stats.factoryBreakdown.map((fb) => {
                     const pct = fb.total > 0 ? Math.round((fb.atFactory / fb.total) * 100) : 0;
                     return (
-                      <TableRow key={fb.id} className="cursor-pointer hover:bg-muted/50">
+                      <TableRow key={fb.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/garments?factory=${fb.id}`)}>
                         <TableCell>
-                          <Link href={`/garments?factory=${fb.id}`} className="flex items-center gap-3">
+                          <div className="flex items-center gap-3">
                             <div className="w-9 h-9 rounded-md bg-primary/10 flex items-center justify-center">
                               <Building2 className="w-4 h-4 text-primary" />
                             </div>
                             <div>
-                              <p className="font-medium">{fb.name}</p>
+                              <p className="font-medium text-primary underline-offset-4 hover:underline">{fb.name}</p>
                               <p className="text-xs text-muted-foreground">{fb.code}</p>
                             </div>
-                          </Link>
+                          </div>
                         </TableCell>
                         <TableCell className="text-center">
                           <span className="font-semibold text-lg">{fb.total}</span>
