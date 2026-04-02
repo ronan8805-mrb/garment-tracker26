@@ -224,6 +224,7 @@ export default function GarmentsPage() {
                     <TableHead>Type</TableHead>
                     <TableHead>Size</TableHead>
                     <TableHead>Factory</TableHead>
+                    <TableHead>Created</TableHead>
                     <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -241,6 +242,15 @@ export default function GarmentsPage() {
                         <Badge variant="outline">{garment.size}</Badge>
                       </TableCell>
                       <TableCell>{getFactoryName(garment.factoryId)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {garment.createdAt
+                          ? new Date(garment.createdAt).toLocaleDateString("en-GB", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            })
+                          : "-"}
+                      </TableCell>
                       <TableCell>
                         <Badge
                           variant={garment.status === "at_factory" ? "default" : "secondary"}
