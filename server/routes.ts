@@ -536,8 +536,9 @@ export async function registerRoutes(
       const seen = new Set<string>();
       for (const ev of scanEventsData) {
         const garment = await storage.getGarment(ev.garmentId);
-        const isDup = seen.has(ev.garmentId);
-        seen.add(ev.garmentId);
+        const dupKey = `${ev.garmentId}:${ev.direction}:${ev.location}`;
+        const isDup = seen.has(dupKey);
+        seen.add(dupKey);
         items.push({
           garmentId: garment?.garmentId || ev.garmentId,
           garmentType: garment?.garmentType || "-",
@@ -604,8 +605,9 @@ export async function registerRoutes(
       const seen = new Set<string>();
       for (const ev of scanEventsData) {
         const garment = await storage.getGarment(ev.garmentId);
-        const isDup = seen.has(ev.garmentId);
-        seen.add(ev.garmentId);
+        const dupKey = `${ev.garmentId}:${ev.direction}:${ev.location}`;
+        const isDup = seen.has(dupKey);
+        seen.add(dupKey);
         items.push({
           garmentId: garment?.garmentId || ev.garmentId,
           garmentType: garment?.garmentType || "-",
@@ -716,10 +718,11 @@ export async function registerRoutes(
         const seenGarments = new Set<string>();
         const duplicateGarments = new Set<string>();
         for (const ev of scanEventsData) {
-          if (seenGarments.has(ev.garmentId)) {
-            duplicateGarments.add(ev.garmentId);
+          const dupKey = `${ev.garmentId}:${ev.direction}:${ev.location}`;
+          if (seenGarments.has(dupKey)) {
+            duplicateGarments.add(dupKey);
           }
-          seenGarments.add(ev.garmentId);
+          seenGarments.add(dupKey);
         }
 
         doc.fontSize(12).font("Helvetica-Bold").text("Scanned Items");
@@ -765,8 +768,9 @@ export async function registerRoutes(
           const displayId = garment?.garmentId || event.garmentId;
           const typeSize = garment ? `${garment.garmentType} / ${garment.size}` : "-";
           const scanTime = fmtDateTime(event.scannedAt);
-          const isDup = seenInRows.has(event.garmentId);
-          seenInRows.add(event.garmentId);
+          const rowDupKey = `${event.garmentId}:${event.direction}:${event.location}`;
+          const isDup = seenInRows.has(rowDupKey);
+          seenInRows.add(rowDupKey);
           
           if (isDup) {
             doc.fillColor("#cc0000");
@@ -916,10 +920,11 @@ export async function registerRoutes(
         const seenGarments = new Set<string>();
         const duplicateGarments = new Set<string>();
         for (const ev of scanEventsData) {
-          if (seenGarments.has(ev.garmentId)) {
-            duplicateGarments.add(ev.garmentId);
+          const dupKey = `${ev.garmentId}:${ev.direction}:${ev.location}`;
+          if (seenGarments.has(dupKey)) {
+            duplicateGarments.add(dupKey);
           }
-          seenGarments.add(ev.garmentId);
+          seenGarments.add(dupKey);
         }
 
         doc.fontSize(12).font("Helvetica-Bold").text("Scanned Items");
@@ -972,8 +977,9 @@ export async function registerRoutes(
           const typeSize = garment ? `${garment.garmentType} / ${garment.size}` : "-";
           const scanTime = fmtDT(event.scannedAt);
           const scannerName = resolveScanner(event.userId);
-          const isDup = seenInRows.has(event.garmentId);
-          seenInRows.add(event.garmentId);
+          const rowDupKey = `${event.garmentId}:${event.direction}:${event.location}`;
+          const isDup = seenInRows.has(rowDupKey);
+          seenInRows.add(rowDupKey);
 
           if (isDup) {
             doc.fillColor("#cc0000");
