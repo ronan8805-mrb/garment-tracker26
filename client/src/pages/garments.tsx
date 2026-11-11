@@ -83,7 +83,9 @@ const GARMENT_TYPES = [
   "Jacket",
 ];
 
-const SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL"];
+const SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"];
+// Shown in the size list; the garment keeps the short code (e.g. "S")
+const SIZE_NAMES: Record<string, string> = { S: "S — Small", M: "M — Medium", L: "L — Large" };
 
 export default function GarmentsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -493,7 +495,7 @@ function BulkGarmentForm({
                           <SelectContent>
                             {SIZES.map((size) => (
                               <SelectItem key={size} value={size}>
-                                {size}
+                                {SIZE_NAMES[size] ?? size}
                               </SelectItem>
                             ))}
                           </SelectContent>
