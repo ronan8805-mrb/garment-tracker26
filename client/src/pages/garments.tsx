@@ -85,7 +85,7 @@ const GARMENT_TYPES = [
 ];
 
 // Same list as GARMENT_COLOURS in shared/schema.ts (the server checks it)
-const GARMENT_COLOURS = ["White", "Red", "Green"];
+const GARMENT_COLOURS = ["White", "Red", "Green", "Grey"];
 
 const SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"];
 

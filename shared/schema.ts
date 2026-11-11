@@ -237,7 +237,7 @@ export const insertInvoiceLineSchema = createInsertSchema(invoiceLines).omit({
 });
 
 // Garment colours offered when creating garments
-export const GARMENT_COLOURS = ["White", "Red", "Green"] as const;
+export const GARMENT_COLOURS = ["White", "Red", "Green", "Grey"] as const;
 
 // Bulk garment creation schema
 export const bulkGarmentSchema = z.object({
