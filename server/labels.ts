@@ -17,7 +17,7 @@ export interface LabelItem {
   garmentId: string;
   garmentType: string;
   size: string;
-  /** Top line of text, e.g. "Demo Factory (DEMO01)" */
+  /** Factory name, printed large, e.g. "Demo Factory" */
   factoryLine: string;
 }
 
@@ -129,10 +129,9 @@ export function generateLabelPdf(
     // Bottom-right: text block
     const tx = 3 + qrSize + 2.5;
     const tw = LABEL_W - tx - 2.5;
-    fitText(item.factoryLine, tx, 19, tw, "Helvetica", 7);
-    fitText(item.garmentId, tx, 22.6, tw, "Helvetica-Bold", 8);
-    fitText(item.garmentType.toUpperCase(), tx, 27, tw, "Helvetica-Bold", 12);
-    fitText(`SIZE ${item.size}`, tx, 31.5, tw, "Helvetica-Bold", 12);
+    fitText(item.factoryLine, tx, 18.6, tw, "Helvetica-Bold", 12);
+    fitText(item.garmentId, tx, 24, tw, "Helvetica-Bold", 7.5);
+    fitText(`${item.garmentType.toUpperCase()}  ·  SIZE ${item.size}`, tx, 28.2, tw, "Helvetica-Bold", 9);
   }
 
   doc.end();

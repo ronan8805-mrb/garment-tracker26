@@ -1114,7 +1114,7 @@ export async function registerRoutes(
         if (garments.length === 0) {
           return res.status(404).json({ message: "No garments to print labels for" });
         }
-        const factoryLine = `${factory.name} (${factory.code})`;
+        const factoryLine = factory.name;
         return generateLabelPdf(
           res,
           garments.map((g) => ({ garmentId: g.garmentId, garmentType: g.garmentType, size: g.size, factoryLine })),
@@ -1268,7 +1268,7 @@ export async function registerRoutes(
         if (garmentsList.length === 0) {
           return res.status(404).json({ message: "This batch has no garments" });
         }
-        const factoryLine = `${factory?.name || "Unknown"} (${factory?.code || "N/A"})`;
+        const factoryLine = factory?.name || "Unknown";
         return generateLabelPdf(
           res,
           garmentsList.map((g) => ({ ...g, factoryLine })),
@@ -1329,7 +1329,7 @@ export async function registerRoutes(
           let line = fid ? factoryLines.get(fid) : undefined;
           if (!line) {
             const f = fid ? await storage.getFactory(fid) : undefined;
-            line = f ? `${f.name} (${f.code})` : factoryName;
+            line = f ? f.name : factoryName;
             if (fid) factoryLines.set(fid, line);
           }
           items.push({ ...item, factoryLine: line });
