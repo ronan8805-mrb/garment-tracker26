@@ -18,7 +18,7 @@ import JsBarcode from "jsbarcode";
 import { createCanvas } from "canvas";
 import bcrypt from "bcryptjs";
 import type { BroadcastFn } from "./websocket";
-import { generateLabelPdf } from "./labels";
+import { sendLabels } from "./labels";
 
 // Constant-time string comparison, so the admin password can't be guessed by timing
 function safeEqual(a: string | undefined, b: string | undefined): boolean {
@@ -1293,11 +1293,10 @@ export async function registerRoutes(
           return res.status(404).json({ message: "No garments to print labels for" });
         }
         const factoryLine = factory.name;
-        return generateLabelPdf(
-          res,
+        return sendLabels(res,
           garments.map((g) => ({ garmentId: g.garmentId, garmentType: g.garmentType, size: g.size, factoryLine })),
           `${factory.code}_Labels_70x38mm_${garments.length}.pdf`,
-          req.query.mode === "print",
+          req.query.mode,
         );
       }
 
@@ -1447,11 +1446,10 @@ export async function registerRoutes(
           return res.status(404).json({ message: "This batch has no garments" });
         }
         const factoryLine = factory?.name || "Unknown";
-        return generateLabelPdf(
-          res,
+        return sendLabels(res,
           garmentsList.map((g) => ({ ...g, factoryLine })),
           `${batch.batchNumber}_Labels_70x38mm.pdf`,
-          req.query.mode === "print",
+          req.query.mode,
         );
       }
 
@@ -1512,7 +1510,7 @@ export async function registerRoutes(
           }
           items.push({ ...item, factoryLine: line });
         }
-        return generateLabelPdf(res, items, `Labels_70x38mm_${date}.pdf`, req.query.mode === "print");
+        return sendLabels(res, items, `Labels_70x38mm_${date}.pdf`, req.query.mode);
       }
 
       const title = `${factoryName} — Scans ${date}`;
