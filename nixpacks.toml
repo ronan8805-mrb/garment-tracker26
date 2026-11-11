@@ -1,0 +1,4 @@
+# NODE_ENV=production is set on Railway, which makes a plain `npm ci` skip
+# devDependencies (tsx, vite, esbuild) that the build needs.
+[phases.install]
+cmds = ["npm ci --include=dev"]
