@@ -17,7 +17,7 @@ import type {
 } from "@shared/schema";
 import { statusAfterScan } from "@shared/schema";
 import { classifyMissing } from "./missing";
-import type { IStorage } from "./storage";
+import type { IStorage, DeleteFactoryResult } from "./storage";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -198,6 +198,47 @@ export class MemoryStorage implements IStorage {
       };
     });
     return classifyMissing(rows, days);
+  }
+
+  async deleteFactory(id: string): Promise<DeleteFactoryResult | null> {
+    const factory = this._factories.find((f) => f.id === id);
+    if (!factory) return null;
+    const garmentIds = new Set(this._garments.filter((g) => g.factoryId === id).map((g) => g.id));
+    const batchIds = new Set(this._scanBatches.filter((b) => b.factoryId === id).map((b) => b.id));
+    const invoiceIds = new Set(this._invoices.filter((i) => i.factoryId === id).map((i) => i.id));
+    const scansBefore = this._scanEvents.length;
+    this._scanEvents = this._scanEvents.filter(
+      (e) => !garmentIds.has(e.garmentId) && !(e.batchId && batchIds.has(e.batchId)),
+    );
+    this._invoiceLines = this._invoiceLines.filter((l) => !invoiceIds.has(l.invoiceId));
+    this._invoices = this._invoices.filter((i) => i.factoryId !== id);
+    this._scanBatches = this._scanBatches.filter((b) => b.factoryId !== id);
+    this._garments = this._garments.filter((g) => g.factoryId !== id);
+    for (const p of this._userProfiles) if (p.factoryId === id) p.factoryId = null;
+    this._factories = this._factories.filter((f) => f.id !== id);
+    return {
+      name: factory.name,
+      garments: garmentIds.size,
+      scans: scansBefore - this._scanEvents.length,
+      batches: batchIds.size,
+      invoices: invoiceIds.size,
+    };
+  }
+
+  async deleteBatch(id: string): Promise<{ scans: number; garments: number } | null> {
+    if (!this._scanBatches.some((b) => b.id === id)) return null;
+    const removed = this._scanEvents.filter((e) => e.batchId === id);
+    this._scanEvents = this._scanEvents.filter((e) => e.batchId !== id);
+    for (const l of this._invoiceLines) if (l.batchId === id) l.batchId = null;
+    this._scanBatches = this._scanBatches.filter((b) => b.id !== id);
+    const garmentIds = Array.from(new Set(removed.map((e) => e.garmentId)));
+    for (const gid of garmentIds) {
+      const last = this._scanEvents
+        .filter((e) => e.garmentId === gid)
+        .sort((a, b) => (b.scannedAt?.getTime() ?? 0) - (a.scannedAt?.getTime() ?? 0))[0];
+      await this.updateGarmentStatus(gid, last ? statusAfterScan(last.location, last.direction) : "at_factory");
+    }
+    return { scans: removed.length, garments: garmentIds.length };
   }
 
   async markGarmentFound(id: string): Promise<Garment | undefined> {

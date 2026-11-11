@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { DeleteWithPasswordDialog } from "@/components/delete-with-password";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +48,7 @@ import {
   Eye,
   Printer,
   Tag,
+  Trash2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -104,6 +107,7 @@ export default function ReportsPage() {
   const [viewingDate, setViewingDate] = useState<string | null>(null);
   const [viewingDateFactory, setViewingDateFactory] = useState<string | null>(null);
   const [viewingBatchId, setViewingBatchId] = useState<string | null>(null);
+  const [deletingBatch, setDeletingBatch] = useState<ScanBatch | null>(null);
 
   const { isAdminSession, isFactorySession, factorySession } = useAuth();
   const { toast } = useToast();
@@ -602,6 +606,17 @@ export default function ReportsPage() {
                                     <Printer className="w-4 h-4 mr-1" />
                                     Labels
                                   </Button>
+                                  {isAdminSession && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="text-destructive hover:text-destructive"
+                                      onClick={() => setDeletingBatch(batch)}
+                                      aria-label={`Delete ${batch.batchNumber}`}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  )}
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -889,6 +904,33 @@ export default function ReportsPage() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <DeleteWithPasswordDialog
+        open={!!deletingBatch}
+        onOpenChange={(open) => !open && setDeletingBatch(null)}
+        title={`Delete batch ${deletingBatch?.batchNumber ?? ""}?`}
+        confirmLabel="Delete batch"
+        description={
+          <>
+            <p>
+              This permanently deletes this batch report ({deletingBatch?.totalItems ?? 0} garments,{" "}
+              {deletingBatch ? `${deletingBatch.direction} at ${deletingBatch.location}` : ""}) and its scans.
+            </p>
+            <p>Its garments go back to where they were before this batch. Invoices that include it are kept.</p>
+            <p className="font-medium text-destructive">This can't be undone.</p>
+          </>
+        }
+        onConfirm={async (password) => {
+          if (!deletingBatch) return;
+          const result = await apiRequest("DELETE", `/api/batches/${deletingBatch.id}`, { password });
+          if (viewingBatchId === deletingBatch.id) setViewingBatchId(null);
+          queryClient.invalidateQueries();
+          toast({
+            title: "Batch deleted",
+            description: `Removed ${result.scans} scans; ${result.garments} garments moved back.`,
+          });
+        }}
+      />
 
       {/* ── BATCH REPORT VIEWER DIALOG ── */}
       <Dialog

@@ -652,6 +652,59 @@ export async function registerRoutes(
     }
   });
 
+  // ========================================================================
+  // Deleting (admin only, must re-type the admin password)
+  // ========================================================================
+  // Only wrong passwords count towards the limit
+  const deleteLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    skipSuccessfulRequests: true,
+    message: { message: "Too many wrong passwords. Try again in 15 minutes." },
+  });
+
+  // Returns true if the request may delete; otherwise sends the error response
+  const confirmDeletePassword = (req: any, res: any): boolean => {
+    if (!req.isAdminSession) {
+      res.status(403).json({ message: "Only the admin can delete" });
+      return false;
+    }
+    const password = typeof req.body?.password === "string" ? req.body.password : "";
+    if (!ADMIN_PASSWORD || !safeEqual(password, ADMIN_PASSWORD)) {
+      // 403 rather than 401, so the app doesn't treat it as being logged out
+      res.status(403).json({ message: "Wrong password" });
+      return false;
+    }
+    return true;
+  };
+
+  app.delete("/api/factories/:id", isAuthenticatedOrFactory, deleteLimiter, async (req: any, res) => {
+    try {
+      if (!confirmDeletePassword(req, res)) return;
+      const result = await storage.deleteFactory(req.params.id);
+      if (!result) return res.status(404).json({ message: "Factory not found" });
+      broadcast("garment_update", { factoryDeleted: req.params.id });
+      res.json({ success: true, ...result });
+    } catch (error) {
+      console.error("Error deleting factory:", error);
+      res.status(500).json({ message: "Failed to delete factory" });
+    }
+  });
+
+  app.delete("/api/batches/:id", isAuthenticatedOrFactory, deleteLimiter, async (req: any, res) => {
+    try {
+      if (!confirmDeletePassword(req, res)) return;
+      const batch = await storage.getBatch(req.params.id);
+      const result = await storage.deleteBatch(req.params.id);
+      if (!result) return res.status(404).json({ message: "Batch not found" });
+      broadcast("batch_complete", { batchDeleted: req.params.id }, batch?.factoryId);
+      res.json({ success: true, ...result });
+    } catch (error) {
+      console.error("Error deleting batch:", error);
+      res.status(500).json({ message: "Failed to delete batch" });
+    }
+  });
+
   // Batch routes
   app.get("/api/batches", isAuthenticatedOrFactory, async (req: any, res) => {
     try {

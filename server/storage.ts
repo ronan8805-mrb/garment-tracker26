@@ -25,7 +25,15 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { classifyMissing, type GarmentWithLastScan } from "./missing";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, inArray } from "drizzle-orm";
+
+export interface DeleteFactoryResult {
+  name: string;
+  garments: number;
+  scans: number;
+  batches: number;
+  invoices: number;
+}
 
 export interface IStorage {
   // Factory operations
@@ -49,6 +57,10 @@ export interface IStorage {
     missing: MissingGarment[];
     writtenOff: MissingGarment[];
   }>;
+  /** Permanently delete a factory and everything belonging to it */
+  deleteFactory(id: string): Promise<DeleteFactoryResult | null>;
+  /** Delete a batch and its scans; affected garments go back to their previous location */
+  deleteBatch(id: string): Promise<{ scans: number; garments: number } | null>;
   /** "Found": clears any write-off and restarts the missing countdown */
   markGarmentFound(id: string): Promise<Garment | undefined>;
   writeOffGarment(id: string): Promise<Garment | undefined>;
@@ -222,6 +234,69 @@ export class DatabaseStorage implements IStorage {
       lastDirection: r.last_direction ?? null,
     }));
     return classifyMissing(rows, days);
+  }
+
+  async deleteFactory(id: string): Promise<DeleteFactoryResult | null> {
+    return db.transaction(async (tx) => {
+      const [factory] = await tx.select().from(factories).where(eq(factories.id, id));
+      if (!factory) return null;
+
+      const invoiceIds = (
+        await tx.select({ id: invoices.id }).from(invoices).where(eq(invoices.factoryId, id))
+      ).map((i) => i.id);
+      if (invoiceIds.length) {
+        await tx.delete(invoiceLines).where(inArray(invoiceLines.invoiceId, invoiceIds));
+      }
+      const deletedInvoices = await tx.delete(invoices).where(eq(invoices.factoryId, id)).returning({ id: invoices.id });
+
+      const byGarment = await tx.execute(
+        sql`DELETE FROM scan_events WHERE garment_id IN (SELECT id FROM garments WHERE factory_id = ${id}) RETURNING id`,
+      );
+      const byBatch = await tx.execute(
+        sql`DELETE FROM scan_events WHERE batch_id IN (SELECT id FROM scan_batches WHERE factory_id = ${id}) RETURNING id`,
+      );
+      const deletedBatches = await tx.delete(scanBatches).where(eq(scanBatches.factoryId, id)).returning({ id: scanBatches.id });
+      const deletedGarments = await tx.delete(garments).where(eq(garments.factoryId, id)).returning({ id: garments.id });
+      await tx.update(userProfiles).set({ factoryId: null }).where(eq(userProfiles.factoryId, id));
+      await tx.delete(factories).where(eq(factories.id, id));
+
+      return {
+        name: factory.name,
+        garments: deletedGarments.length,
+        scans: (byGarment.rowCount ?? 0) + (byBatch.rowCount ?? 0),
+        batches: deletedBatches.length,
+        invoices: deletedInvoices.length,
+      };
+    });
+  }
+
+  async deleteBatch(id: string): Promise<{ scans: number; garments: number } | null> {
+    return db.transaction(async (tx) => {
+      const [batch] = await tx.select().from(scanBatches).where(eq(scanBatches.id, id));
+      if (!batch) return null;
+
+      const removed = await tx
+        .delete(scanEvents)
+        .where(eq(scanEvents.batchId, id))
+        .returning({ garmentId: scanEvents.garmentId });
+      // Invoices are financial records: keep them, just unlink the batch
+      await tx.update(invoiceLines).set({ batchId: null }).where(eq(invoiceLines.batchId, id));
+      await tx.delete(scanBatches).where(eq(scanBatches.id, id));
+
+      // Put each garment back where its latest remaining scan says it is
+      const garmentIds = Array.from(new Set(removed.map((r) => r.garmentId)));
+      for (const garmentId of garmentIds) {
+        const [last] = await tx
+          .select()
+          .from(scanEvents)
+          .where(eq(scanEvents.garmentId, garmentId))
+          .orderBy(desc(scanEvents.scannedAt))
+          .limit(1);
+        const status = last ? statusAfterScan(last.location, last.direction) : "at_factory";
+        await tx.update(garments).set({ status }).where(eq(garments.id, garmentId));
+      }
+      return { scans: removed.length, garments: garmentIds.length };
+    });
   }
 
   async markGarmentFound(id: string): Promise<Garment | undefined> {

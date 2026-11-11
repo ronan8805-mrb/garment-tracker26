@@ -40,7 +40,8 @@ import {
 } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Building2, Plus, Search, Shirt, Edit2, Key, Copy, CheckCircle2 } from "lucide-react";
+import { Building2, Plus, Search, Shirt, Edit2, Key, Copy, CheckCircle2, Trash2 } from "lucide-react";
+import { DeleteWithPasswordDialog } from "@/components/delete-with-password";
 import { Link } from "wouter";
 import type { Factory } from "@shared/schema";
 
@@ -79,6 +80,7 @@ function generatePassword(length: number = 12): string {
 export default function FactoriesPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingFactory, setEditingFactory] = useState<Factory | null>(null);
+  const [deletingFactory, setDeletingFactory] = useState<Factory | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [createdCredentials, setCreatedCredentials] = useState<CreatedFactoryCredentials | null>(null);
   const { toast } = useToast();
@@ -229,6 +231,16 @@ export default function FactoriesPage() {
                           >
                             <Edit2 className="w-4 h-4" />
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => setDeletingFactory(factory)}
+                            aria-label={`Delete ${factory.name}`}
+                            data-testid={`button-delete-factory-${factory.id}`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                           <Button variant="outline" size="sm" asChild>
                             <Link href={`/garments?factory=${factory.id}`}>
                               <Shirt className="w-4 h-4 mr-1" />
@@ -263,6 +275,32 @@ export default function FactoriesPage() {
           )}
         </CardContent>
       </Card>
+
+      <DeleteWithPasswordDialog
+        open={!!deletingFactory}
+        onOpenChange={(open) => !open && setDeletingFactory(null)}
+        title={`Delete ${deletingFactory?.name ?? "factory"}?`}
+        confirmLabel="Delete factory"
+        description={
+          <>
+            <p>
+              This permanently deletes <strong>{deletingFactory?.name} ({deletingFactory?.code})</strong> and
+              everything belonging to it:
+            </p>
+            <p>all its garments, their scan history, its batch reports and its invoices. Its login stops working.</p>
+            <p className="font-medium text-destructive">This can't be undone.</p>
+          </>
+        }
+        onConfirm={async (password) => {
+          if (!deletingFactory) return;
+          const result = await apiRequest("DELETE", `/api/factories/${deletingFactory.id}`, { password });
+          queryClient.invalidateQueries();
+          toast({
+            title: `${result.name} deleted`,
+            description: `Removed ${result.garments} garments, ${result.scans} scans, ${result.batches} batch reports and ${result.invoices} invoices.`,
+          });
+        }}
+      />
 
       <Dialog open={!!editingFactory} onOpenChange={() => setEditingFactory(null)}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">
