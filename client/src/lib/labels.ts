@@ -115,11 +115,14 @@ function desktopApi(): DesktopApi | undefined {
   return typeof window !== "undefined" ? (window as any).electronAPI : undefined;
 }
 
-export type LabelPrintChoice = "test" | "all";
+/** Which labels to print, counted from 1 (e.g. 6 to 50 to finish a run that stopped after 5) */
+export type LabelPrintChoice = { from: number; to: number };
 
 export interface LabelPrintRequest {
   count: number;
   printer: string;
+  /** Garment ID on each label, in print order */
+  ids: string[];
   answer: (choice: LabelPrintChoice | null) => void;
 }
 
@@ -134,7 +137,8 @@ export function onLabelPrintRequest(listener: (req: LabelPrintRequest) => void) 
   };
 }
 
-function askHowMany(count: number, printer: string): Promise<LabelPrintChoice | null> {
+function askHowMany(ids: string[], printer: string): Promise<LabelPrintChoice | null> {
+  const count = ids.length;
   return new Promise((resolve) => {
     let done = false;
     const answer = (choice: LabelPrintChoice | null) => {
@@ -142,8 +146,8 @@ function askHowMany(count: number, printer: string): Promise<LabelPrintChoice | 
       done = true;
       resolve(choice);
     };
-    if (askListener) askListener({ count, printer, answer });
-    else answer(window.confirm(`Print ${count} label${count === 1 ? "" : "s"} on ${printer}?`) ? "all" : null);
+    if (askListener) askListener({ count, printer, ids, answer });
+    else answer(window.confirm(`Print ${count} label${count === 1 ? "" : "s"} on ${printer}?`) ? { from: 1, to: count } : null);
   });
 }
 
@@ -222,9 +226,11 @@ async function printDirect(
   const job: LabelJob = await (await fetchOk(`${baseUrl}${sep}format=label&mode=json&dpi=${dpi}`)).json();
   if (!job.labels?.length) throw new Error("No labels to print");
 
-  const choice = await askHowMany(job.labels.length, printer.name);
+  const choice = await askHowMany(job.labels.map((l) => l.id), printer.name);
   if (!choice) return { printed: 0, printer: printer.name };
-  const labels = choice === "test" ? job.labels.slice(0, 1) : job.labels;
+  const from = Math.min(Math.max(1, Math.floor(choice.from)), job.labels.length);
+  const to = Math.min(Math.max(from, Math.floor(choice.to)), job.labels.length);
+  const labels = job.labels.slice(from - 1, to);
 
   const canvas = document.createElement("canvas");
   canvas.width = job.width;
