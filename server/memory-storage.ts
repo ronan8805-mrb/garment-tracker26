@@ -165,6 +165,7 @@ export class MemoryStorage implements IStorage {
       factoryId: g.factoryId,
       garmentType: g.garmentType,
       size: g.size,
+      colour: g.colour ?? null,
       status: g.status ?? "at_factory",
       createdAt: now(),
       missingResetAt: null,

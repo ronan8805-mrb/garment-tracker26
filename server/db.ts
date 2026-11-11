@@ -24,6 +24,7 @@ export async function ensureSchema(): Promise<void> {
     `ALTER TABLE garments ADD COLUMN IF NOT EXISTS created_at timestamp DEFAULT now()`,
     `ALTER TABLE garments ADD COLUMN IF NOT EXISTS missing_reset_at timestamp`,
     `ALTER TABLE garments ADD COLUMN IF NOT EXISTS written_off_at timestamp`,
+    `ALTER TABLE garments ADD COLUMN IF NOT EXISTS colour text`,
     `CREATE INDEX IF NOT EXISTS idx_scan_events_garment_scanned ON scan_events (garment_id, scanned_at)`,
   ];
   for (const statement of statements) {

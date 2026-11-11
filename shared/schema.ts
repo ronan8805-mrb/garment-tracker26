@@ -41,6 +41,8 @@ export const garments = pgTable("garments", {
   factoryId: varchar("factory_id").notNull(),
   garmentType: text("garment_type").notNull(),
   size: varchar("size", { length: 10 }).notNull(),
+  // Optional garment colour, one of GARMENT_COLOURS
+  colour: text("colour"),
   status: garmentStatusEnum("status").notNull().default("at_factory"),
   createdAt: timestamp("created_at").defaultNow(),
   // Set by the "Found" button: restarts the missing countdown without a scan
@@ -234,12 +236,16 @@ export const insertInvoiceLineSchema = createInsertSchema(invoiceLines).omit({
   id: true,
 });
 
+// Garment colours offered when creating garments
+export const GARMENT_COLOURS = ["White", "Red", "Green"] as const;
+
 // Bulk garment creation schema
 export const bulkGarmentSchema = z.object({
   factoryId: z.string(),
   garments: z.array(z.object({
     garmentType: z.string(),
     size: z.string(),
+    colour: z.enum(GARMENT_COLOURS).optional(),
     quantity: z.number().min(1),
   })),
 });

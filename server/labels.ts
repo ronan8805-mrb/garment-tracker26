@@ -27,6 +27,8 @@ export interface LabelItem {
   garmentId: string;
   garmentType: string;
   size: string;
+  /** Optional colour, e.g. "Red" */
+  colour?: string | null;
   /** Factory name, printed large, e.g. "Demo Factory" */
   factoryLine: string;
 }
@@ -115,7 +117,10 @@ export function buildLabelSpec(item: LabelItem, dpi = DEFAULT_DPI): LabelSpec {
   const texts = [
     fitText(item.factoryLine, tx, 18.6, tw, true, 12),
     fitText(item.garmentId, tx, 24, tw, true, 7.5),
-    fitText(`${item.garmentType.toUpperCase()}  ·  SIZE ${item.size}`, tx, 28.2, tw, true, 9),
+    fitText(
+      [item.garmentType, item.colour, `SIZE ${item.size}`].filter(Boolean).join("  ·  ").toUpperCase(),
+      tx, 28.2, tw, true, 9,
+    ),
   ];
   return { barcode, qr, texts };
 }

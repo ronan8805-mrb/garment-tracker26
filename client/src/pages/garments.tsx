@@ -66,6 +66,7 @@ const bulkGarmentSchema = z.object({
     z.object({
       garmentType: z.string().min(1, "Garment type is required"),
       size: z.string().min(1, "Size is required"),
+      colour: z.string().optional(),
       quantity: z.coerce.number().min(1, "Quantity must be at least 1"),
     })
   ).min(1, "Add at least one garment type"),
@@ -82,6 +83,9 @@ const GARMENT_TYPES = [
   "Apron",
   "Jacket",
 ];
+
+// Same list as GARMENT_COLOURS in shared/schema.ts (the server checks it)
+const GARMENT_COLOURS = ["White", "Red", "Green"];
 
 const SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"];
 // Shown in the size list; the garment keeps the short code (e.g. "S")
@@ -302,6 +306,7 @@ export default function GarmentsPage() {
                     <TableHead>Garment ID</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Size</TableHead>
+                    <TableHead>Colour</TableHead>
                     <TableHead>Factory</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead>Status</TableHead>
@@ -320,6 +325,7 @@ export default function GarmentsPage() {
                       <TableCell>
                         <Badge variant="outline">{garment.size}</Badge>
                       </TableCell>
+                      <TableCell>{garment.colour || "—"}</TableCell>
                       <TableCell>{getFactoryName(garment.factoryId)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {garment.createdAt
@@ -496,6 +502,31 @@ function BulkGarmentForm({
                             {SIZES.map((size) => (
                               <SelectItem key={size} value={size}>
                                 {SIZE_NAMES[size] ?? size}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name={`garments.${index}.colour`}
+                    render={({ field }) => (
+                      <FormItem className="w-28">
+                        {index === 0 && <FormLabel className="text-xs">Colour</FormLabel>}
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid={`select-colour-${index}`}>
+                              <SelectValue placeholder="Colour" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {GARMENT_COLOURS.map((colour) => (
+                              <SelectItem key={colour} value={colour}>
+                                {colour}
                               </SelectItem>
                             ))}
                           </SelectContent>

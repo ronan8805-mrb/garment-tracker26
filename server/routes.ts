@@ -429,6 +429,7 @@ export async function registerRoutes(
             factoryId: validatedData.factoryId,
             garmentType: item.garmentType,
             size: item.size,
+            colour: item.colour ?? null,
             status: "at_factory" as const,
           });
         }
@@ -1294,7 +1295,7 @@ export async function registerRoutes(
         }
         const factoryLine = factory.name;
         return sendLabels(res,
-          garments.map((g) => ({ garmentId: g.garmentId, garmentType: g.garmentType, size: g.size, factoryLine })),
+          garments.map((g) => ({ garmentId: g.garmentId, garmentType: g.garmentType, size: g.size, colour: g.colour, factoryLine })),
           `${factory.code}_Labels_70x38mm_${garments.length}.pdf`,
           req.query.mode,
           req.query.dpi,
@@ -1433,13 +1434,13 @@ export async function registerRoutes(
       const factory = await storage.getFactory(batch.factoryId);
       const scanEventsData = await storage.getScanEventsByBatchId(batch.id);
 
-      const garmentsList: { garmentId: string; garmentType: string; size: string }[] = [];
+      const garmentsList: { garmentId: string; garmentType: string; size: string; colour?: string | null }[] = [];
       const seen = new Set<string>();
       for (const ev of scanEventsData) {
         if (seen.has(ev.garmentId)) continue;
         seen.add(ev.garmentId);
         const g = await storage.getGarment(ev.garmentId);
-        if (g) garmentsList.push({ garmentId: g.garmentId, garmentType: g.garmentType, size: g.size });
+        if (g) garmentsList.push({ garmentId: g.garmentId, garmentType: g.garmentType, size: g.size, colour: g.colour });
       }
 
       if (req.query.format === "label") {
@@ -1485,13 +1486,13 @@ export async function registerRoutes(
         ? (await storage.getFactory(factoryId))?.name || "Unknown"
         : "All Factories";
 
-      const garmentsList: { garmentId: string; garmentType: string; size: string }[] = [];
+      const garmentsList: { garmentId: string; garmentType: string; size: string; colour?: string | null }[] = [];
       const seen = new Set<string>();
       for (const ev of scanEventsData) {
         if (seen.has(ev.garmentId)) continue;
         seen.add(ev.garmentId);
         const g = await storage.getGarment(ev.garmentId);
-        if (g) garmentsList.push({ garmentId: g.garmentId, garmentType: g.garmentType, size: g.size });
+        if (g) garmentsList.push({ garmentId: g.garmentId, garmentType: g.garmentType, size: g.size, colour: g.colour });
       }
 
       if (req.query.format === "label") {
