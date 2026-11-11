@@ -56,7 +56,8 @@ import {
   Printer,
   Tag,
 } from "lucide-react";
-import { downloadFile, labelUrl, printPdf } from "@/lib/labels";
+import { downloadFile, labelUrl } from "@/lib/labels";
+import { usePrintLabels } from "@/hooks/use-print-labels";
 import type { Factory as FactoryType, Garment } from "@shared/schema";
 
 const bulkGarmentSchema = z.object({
@@ -99,7 +100,7 @@ export default function GarmentsPage() {
     count: number;
     since: string | null;
   } | null>(null);
-  const [isPrintingLabels, setIsPrintingLabels] = useState(false);
+  const { printingKey: printingNewLabels, print: printNewLabels } = usePrintLabels();
 
   const lastCreatedLabelBase = lastCreated
     ? `/api/factories/${lastCreated.factoryId}/qr-codes` +
@@ -108,14 +109,7 @@ export default function GarmentsPage() {
 
   const handlePrintNewLabels = async () => {
     if (!lastCreated) return;
-    setIsPrintingLabels(true);
-    try {
-      await printPdf(labelUrl(lastCreatedLabelBase, "print"));
-    } catch (err: any) {
-      toast({ title: "Can't print labels", description: err?.message, variant: "destructive" });
-    } finally {
-      setIsPrintingLabels(false);
-    }
+    await printNewLabels(lastCreatedLabelBase);
   };
 
   useEffect(() => {
@@ -217,9 +211,9 @@ export default function GarmentsPage() {
                 Print their 70 × 38 mm labels now{lastCreated.since ? "" : " (all of this factory's garments)"}.
               </p>
             </div>
-            <Button onClick={handlePrintNewLabels} disabled={isPrintingLabels}>
+            <Button onClick={handlePrintNewLabels} disabled={!!printingNewLabels}>
               <Printer className="w-4 h-4 mr-1" />
-              {isPrintingLabels ? "Preparing…" : "Print labels"}
+              {printingNewLabels ? "Preparing…" : "Print labels"}
             </Button>
             <Button variant="outline" onClick={() => downloadFile(labelUrl(lastCreatedLabelBase, "download"))}>
               <Tag className="w-4 h-4 mr-1" />

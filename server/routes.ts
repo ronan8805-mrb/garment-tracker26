@@ -1297,6 +1297,7 @@ export async function registerRoutes(
           garments.map((g) => ({ garmentId: g.garmentId, garmentType: g.garmentType, size: g.size, factoryLine })),
           `${factory.code}_Labels_70x38mm_${garments.length}.pdf`,
           req.query.mode,
+          req.query.dpi,
         );
       }
 
@@ -1450,6 +1451,7 @@ export async function registerRoutes(
           garmentsList.map((g) => ({ ...g, factoryLine })),
           `${batch.batchNumber}_Labels_70x38mm.pdf`,
           req.query.mode,
+          req.query.dpi,
         );
       }
 
@@ -1510,7 +1512,7 @@ export async function registerRoutes(
           }
           items.push({ ...item, factoryLine: line });
         }
-        return sendLabels(res, items, `Labels_70x38mm_${date}.pdf`, req.query.mode);
+        return sendLabels(res, items, `Labels_70x38mm_${date}.pdf`, req.query.mode, req.query.dpi);
       }
 
       const title = `${factoryName} — Scans ${date}`;

@@ -52,7 +52,8 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { downloadFile, labelUrl, printPdf } from "@/lib/labels";
+import { downloadFile, labelUrl } from "@/lib/labels";
+import { usePrintLabels } from "@/hooks/use-print-labels";
 import type { Factory, ScanBatch } from "@shared/schema";
 
 interface ScanDate {
@@ -111,19 +112,8 @@ export default function ReportsPage() {
 
   const { isAdminSession, isFactorySession, factorySession } = useAuth();
   const { toast } = useToast();
-  const [printingKey, setPrintingKey] = useState<string | null>(null);
-
   // Print 70 x 38 mm labels from any barcode endpoint
-  const handlePrintLabels = async (baseUrl: string, key: string) => {
-    setPrintingKey(key);
-    try {
-      await printPdf(labelUrl(baseUrl, "print"));
-    } catch (err: any) {
-      toast({ title: "Can't print labels", description: err?.message, variant: "destructive" });
-    } finally {
-      setPrintingKey(null);
-    }
-  };
+  const { printingKey, print: handlePrintLabels } = usePrintLabels();
 
   const { data: factories } = useQuery<Factory[]>({
     queryKey: ["/api/factories"],
