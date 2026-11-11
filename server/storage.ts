@@ -20,6 +20,7 @@ import {
   type InsertInvoice,
   type InvoiceLine,
   type InsertInvoiceLine,
+  statusAfterScan,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -292,7 +293,8 @@ export class DatabaseStorage implements IStorage {
 
       for (const gId of garmentIds) {
         const [garment] = await tx.select().from(garments).where(eq(garments.garmentId, gId));
-        if (!garment) continue;
+        // Skip unknown garments and garments that belong to a different factory
+        if (!garment || garment.factoryId !== batchData.factoryId) continue;
 
         const [existingScan] = await tx
           .select()
@@ -320,7 +322,7 @@ export class DatabaseStorage implements IStorage {
           });
         }
 
-        const newStatus = location === "factory" ? "at_factory" : "at_laundry";
+        const newStatus = statusAfterScan(location, direction);
         await tx.update(garments).set({ status: newStatus }).where(eq(garments.id, garment.id));
         processedCount++;
       }

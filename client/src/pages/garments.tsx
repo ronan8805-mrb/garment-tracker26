@@ -53,7 +53,10 @@ import {
   Filter,
   Calendar,
   X,
+  Printer,
+  Tag,
 } from "lucide-react";
+import { downloadFile, labelUrl, printPdf } from "@/lib/labels";
 import type { Factory as FactoryType, Garment } from "@shared/schema";
 
 const bulkGarmentSchema = z.object({
@@ -89,6 +92,31 @@ export default function GarmentsPage() {
   const [filterDate, setFilterDate] = useState<string>("");
   const { toast } = useToast();
   const { isAdminSession } = useAuth();
+  // The lot of garments just created, so its labels can be printed straight away
+  const [lastCreated, setLastCreated] = useState<{
+    factoryId: string;
+    factoryCode: string;
+    count: number;
+    since: string | null;
+  } | null>(null);
+  const [isPrintingLabels, setIsPrintingLabels] = useState(false);
+
+  const lastCreatedLabelBase = lastCreated
+    ? `/api/factories/${lastCreated.factoryId}/qr-codes` +
+      (lastCreated.since ? `?since=${encodeURIComponent(lastCreated.since)}` : "")
+    : "";
+
+  const handlePrintNewLabels = async () => {
+    if (!lastCreated) return;
+    setIsPrintingLabels(true);
+    try {
+      await printPdf(labelUrl(lastCreatedLabelBase, "print"));
+    } catch (err: any) {
+      toast({ title: "Can't print labels", description: err?.message, variant: "destructive" });
+    } finally {
+      setIsPrintingLabels(false);
+    }
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -111,6 +139,12 @@ export default function GarmentsPage() {
     onSuccess: (response: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/garments"] });
       setIsCreateOpen(false);
+      setLastCreated({
+        factoryId: response.factoryId,
+        factoryCode: response.factoryCode,
+        count: response.count,
+        since: response.createdSince ?? null,
+      });
       toast({
         title: "Garments created",
         description: `${response.count} garments have been created with barcodes.`,
@@ -170,6 +204,33 @@ export default function GarmentsPage() {
           </Dialog>
         )}
       </div>
+
+      {isAdminSession && lastCreated && (
+        <Card className="border-primary/40 bg-primary/5">
+          <CardContent className="flex flex-wrap items-center gap-3 py-4">
+            <Printer className="w-5 h-5 text-primary" />
+            <div className="flex-1 min-w-[200px]">
+              <p className="font-medium">
+                {lastCreated.count} new garment{lastCreated.count === 1 ? "" : "s"} for {lastCreated.factoryCode}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Print their 70 × 38 mm labels now{lastCreated.since ? "" : " (all of this factory's garments)"}.
+              </p>
+            </div>
+            <Button onClick={handlePrintNewLabels} disabled={isPrintingLabels}>
+              <Printer className="w-4 h-4 mr-1" />
+              {isPrintingLabels ? "Preparing…" : "Print labels"}
+            </Button>
+            <Button variant="outline" onClick={() => downloadFile(labelUrl(lastCreatedLabelBase, "download"))}>
+              <Tag className="w-4 h-4 mr-1" />
+              Labels PDF
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => setLastCreated(null)} aria-label="Dismiss">
+              <X className="w-4 h-4" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="pb-3">

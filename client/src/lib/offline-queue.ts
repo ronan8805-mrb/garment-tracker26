@@ -46,16 +46,18 @@ export async function queueScan(garmentId: string, location: string, direction: 
   return scan;
 }
 
+// Synced scans are deleted from the store (see markScanSynced), so every
+// record still in it is pending. (IndexedDB can't use true/false as an index
+// key, so querying the "synced" index with `false` throws a DataError.)
 export async function getPendingScans(): Promise<QueuedScan[]> {
   const db = await getDb();
-  const all = await db.getAllFromIndex(STORE_NAME, "synced", false);
-  return all as QueuedScan[];
+  const all = (await db.getAll(STORE_NAME)) as QueuedScan[];
+  return all.sort((a, b) => a.timestamp - b.timestamp); // send in the order scanned
 }
 
 export async function getPendingCount(): Promise<number> {
   const db = await getDb();
-  const count = await db.countFromIndex(STORE_NAME, "synced", false);
-  return count;
+  return db.count(STORE_NAME);
 }
 
 export async function markScanSynced(id: string): Promise<void> {
@@ -103,22 +105,27 @@ export async function syncPendingScans(): Promise<{ synced: number; failed: numb
 }
 
 let syncInterval: ReturnType<typeof setInterval> | null = null;
+let syncing = false;
 
 export function startAutoSync() {
   if (syncInterval) return;
   
-  window.addEventListener("online", () => {
-    syncPendingScans();
-  });
-
-  syncInterval = setInterval(async () => {
-    if (navigator.onLine) {
-      const count = await getPendingCount();
-      if (count > 0) {
-        await syncPendingScans();
-      }
+  // Never run two syncs at once, or the same scan could be sent twice
+  const trySync = async () => {
+    if (syncing || !navigator.onLine) return;
+    syncing = true;
+    try {
+      if ((await getPendingCount()) > 0) await syncPendingScans();
+    } catch (err) {
+      console.error("Offline scan sync failed", err);
+    } finally {
+      syncing = false;
     }
-  }, 10000);
+  };
+
+  window.addEventListener("online", trySync);
+  syncInterval = setInterval(trySync, 10000);
+  trySync();
 }
 
 export function stopAutoSync() {

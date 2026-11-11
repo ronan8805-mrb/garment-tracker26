@@ -44,8 +44,12 @@ import {
   Barcode,
   CalendarDays,
   Eye,
+  Printer,
+  Tag,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
+import { downloadFile, labelUrl, printPdf } from "@/lib/labels";
 import type { Factory, ScanBatch } from "@shared/schema";
 
 interface ScanDate {
@@ -102,6 +106,20 @@ export default function ReportsPage() {
   const [viewingBatchId, setViewingBatchId] = useState<string | null>(null);
 
   const { isAdminSession, isFactorySession, factorySession } = useAuth();
+  const { toast } = useToast();
+  const [printingKey, setPrintingKey] = useState<string | null>(null);
+
+  // Print 70 x 38 mm labels from any barcode endpoint
+  const handlePrintLabels = async (baseUrl: string, key: string) => {
+    setPrintingKey(key);
+    try {
+      await printPdf(labelUrl(baseUrl, "print"));
+    } catch (err: any) {
+      toast({ title: "Can't print labels", description: err?.message, variant: "destructive" });
+    } finally {
+      setPrintingKey(null);
+    }
+  };
 
   const { data: factories } = useQuery<Factory[]>({
     queryKey: ["/api/factories"],
@@ -195,6 +213,12 @@ export default function ReportsPage() {
     window.open(`/api/factories/${factoryId}/qr-codes`, "_blank");
   };
 
+  const dateBarcodeUrl = () => {
+    if (!viewingDate) return "";
+    const factoryParam = viewingDateFactory ? `?factory=${viewingDateFactory}` : "";
+    return `/api/scan-dates/${viewingDate}/barcodes${factoryParam}`;
+  };
+
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr + "T12:00:00");
     return d.toLocaleDateString("en-GB", {
@@ -215,7 +239,7 @@ export default function ReportsPage() {
     });
   };
 
-  const fmtDateTime = (d: string | null) => {
+  const fmtDateTime = (d: string | Date | null) => {
     if (!d) return "-";
     const dt = new Date(d);
     return dt.toLocaleString("en-GB", {
@@ -570,6 +594,17 @@ export default function ReportsPage() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
+                                    disabled={printingKey === `batch-${batch.id}`}
+                                    onClick={() =>
+                                      handlePrintLabels(`/api/batches/${batch.id}/barcodes`, `batch-${batch.id}`)
+                                    }
+                                  >
+                                    <Printer className="w-4 h-4 mr-1" />
+                                    Labels
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
                                     onClick={() =>
                                       handleDownloadBatchReport(batch.id)
                                     }
@@ -619,21 +654,49 @@ export default function ReportsPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Download barcode sheets for all garments assigned to a
-                  factory.
+                  Labels are 70 × 38 mm, one per garment, for the SQUIX
+                  thermal printer. The A4 sheet is for office printers.
                 </p>
                 {factories && factories.length > 0 ? (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {factories.map((factory) => (
-                      <Button
-                        key={factory.id}
-                        variant="outline"
-                        className="w-full justify-start"
-                        onClick={() => handleDownloadBarcodes(factory.id)}
-                      >
-                        <Barcode className="w-4 h-4 mr-2" />
-                        {factory.name} ({factory.code})
-                      </Button>
+                      <div key={factory.id} className="rounded-md border p-3 space-y-2">
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                          <Barcode className="w-4 h-4 text-muted-foreground" />
+                          {factory.name} ({factory.code})
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            size="sm"
+                            disabled={printingKey === `factory-${factory.id}`}
+                            onClick={() =>
+                              handlePrintLabels(`/api/factories/${factory.id}/qr-codes`, `factory-${factory.id}`)
+                            }
+                          >
+                            <Printer className="w-4 h-4 mr-1" />
+                            {printingKey === `factory-${factory.id}` ? "Preparing…" : "Print labels"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              downloadFile(labelUrl(`/api/factories/${factory.id}/qr-codes`, "download"))
+                            }
+                          >
+                            <Tag className="w-4 h-4 mr-1" />
+                            Labels PDF
+                          </Button>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="w-full justify-start text-muted-foreground"
+                          onClick={() => handleDownloadBarcodes(factory.id)}
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          A4 barcode sheet
+                        </Button>
+                      </div>
                     ))}
                   </div>
                 ) : (
@@ -707,12 +770,20 @@ export default function ReportsPage() {
                   size="sm"
                   onClick={() => {
                     if (!viewingDate) return;
-                    const factoryParam = viewingDateFactory ? `?factory=${viewingDateFactory}` : "";
-                    window.open(`/api/scan-dates/${viewingDate}/barcodes${factoryParam}`, "_blank");
+                    window.open(dateBarcodeUrl(), "_blank");
                   }}
                 >
                   <Barcode className="w-4 h-4 mr-1" />
                   Barcodes
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!viewingDate || printingKey === "date"}
+                  onClick={() => viewingDate && handlePrintLabels(dateBarcodeUrl(), "date")}
+                >
+                  <Printer className="w-4 h-4 mr-1" />
+                  Labels
                 </Button>
                 <Button
                   variant="outline"
@@ -840,6 +911,18 @@ export default function ReportsPage() {
                 >
                   <Barcode className="w-4 h-4 mr-1" />
                   Barcodes
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!viewingBatchId || printingKey === `batch-${viewingBatchId}`}
+                  onClick={() =>
+                    viewingBatchId &&
+                    handlePrintLabels(`/api/batches/${viewingBatchId}/barcodes`, `batch-${viewingBatchId}`)
+                  }
+                >
+                  <Printer className="w-4 h-4 mr-1" />
+                  Labels
                 </Button>
                 <Button
                   variant="outline"

@@ -15,6 +15,7 @@ import type {
   InvoiceLine,
   InsertInvoiceLine,
 } from "@shared/schema";
+import { statusAfterScan } from "@shared/schema";
 import type { IStorage } from "./storage";
 
 // ---------------------------------------------------------------------------
@@ -311,7 +312,8 @@ export class MemoryStorage implements IStorage {
 
     for (const gId of garmentIds) {
       const garment = this._garments.find((g) => g.garmentId === gId);
-      if (!garment) continue;
+      // Skip unknown garments and garments that belong to a different factory
+      if (!garment || garment.factoryId !== batchData.factoryId) continue;
 
       const existingScan = [...this._scanEvents]
         .filter(
@@ -335,7 +337,7 @@ export class MemoryStorage implements IStorage {
         });
       }
 
-      const newStatus = location === "factory" ? "at_factory" : "at_laundry";
+      const newStatus = statusAfterScan(location, direction);
       await this.updateGarmentStatus(garment.id, newStatus);
       processedCount++;
     }

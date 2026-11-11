@@ -264,4 +264,22 @@ export type InsertInvoiceLine = z.infer<typeof insertInvoiceLineSchema>;
 export type BulkGarmentInput = z.infer<typeof bulkGarmentSchema>;
 
 export type FactoryLoginInput = z.infer<typeof factoryLoginSchema>;
+
+export const SCAN_LOCATIONS = ["factory", "laundry"] as const;
+export const SCAN_DIRECTIONS = ["IN", "OUT"] as const;
+export type ScanLocation = (typeof SCAN_LOCATIONS)[number];
+export type ScanDirection = (typeof SCAN_DIRECTIONS)[number];
+
+/**
+ * Where a garment is after a scan. IN at a location means it is there;
+ * OUT at a location means it has left for the other one.
+ * Used by single scans and batches so they always agree.
+ */
+export function statusAfterScan(
+  location: ScanLocation,
+  direction: ScanDirection,
+): "at_factory" | "at_laundry" {
+  if (direction === "IN") return location === "factory" ? "at_factory" : "at_laundry";
+  return location === "factory" ? "at_laundry" : "at_factory";
+}
 export type CreateFactoryWithCredentials = z.infer<typeof createFactoryWithCredentialsSchema>;

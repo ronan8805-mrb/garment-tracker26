@@ -58,6 +58,10 @@ In Railway → your Node.js service → Variables tab, add:
 | `ADMIN_USERNAME` | your admin username |
 | `ADMIN_PASSWORD` | your admin password |
 | `NODE_ENV` | `production` |
+| `LABEL_DPI` | *(optional)* `200` (default) or `300` — resolution of the label printer, so barcode bars land on whole printer dots |
+| `CORS_ORIGINS` | *(optional)* comma-separated extra websites allowed to call the API. Leave unset: the web, Android and Windows apps don't need it |
+
+> `SESSION_SECRET`, `ADMIN_USERNAME` and `ADMIN_PASSWORD` are required. Without `SESSION_SECRET` the server uses a random one and everyone is logged out on every restart; without the admin variables nobody can log in as admin.
 
 ### Create Database Tables
 

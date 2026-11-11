@@ -3,13 +3,60 @@ import { type Server } from "http";
 import rateLimit from "express-rate-limit";
 import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
-import { bulkGarmentSchema, createFactoryWithCredentialsSchema, factoryLoginSchema } from "@shared/schema";
+import {
+  bulkGarmentSchema,
+  createFactoryWithCredentialsSchema,
+  factoryLoginSchema,
+  statusAfterScan,
+  SCAN_LOCATIONS,
+  SCAN_DIRECTIONS,
+} from "@shared/schema";
+import { timingSafeEqual } from "crypto";
 import { z } from "zod";
 import PDFDocument from "pdfkit";
 import JsBarcode from "jsbarcode";
 import { createCanvas } from "canvas";
 import bcrypt from "bcryptjs";
 import type { BroadcastFn } from "./websocket";
+import { generateLabelPdf } from "./labels";
+
+// Constant-time string comparison, so the admin password can't be guessed by timing
+function safeEqual(a: string | undefined, b: string | undefined): boolean {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
+
+// Start a fresh session on login (prevents session fixation)
+function regenerateSession(req: any): Promise<void> {
+  return new Promise((resolve, reject) =>
+    req.session.regenerate((err: any) => (err ? reject(err) : resolve())),
+  );
+}
+
+// Fields an admin may change on a factory
+const updateFactorySchema = z
+  .object({
+    name: z.string().trim().min(1, "Factory name is required"),
+    code: z
+      .string()
+      .trim()
+      .min(1, "Code is required")
+      .max(10, "Code must be 10 characters or less")
+      .regex(/^[A-Z0-9]+$/, "Code must be uppercase letters and numbers only"),
+    location: z.string().nullable(),
+    username: z
+      .string()
+      .trim()
+      .min(3, "Username must be at least 3 characters")
+      .max(50)
+      .regex(/^[a-z0-9_]+$/, "Username must be lowercase letters, numbers, and underscores only"),
+    password: z.string().optional(),
+    isActive: z.boolean(),
+  })
+  .partial();
 
 function stripPasswordHash(obj: any) {
   if (!obj) return obj;
@@ -41,6 +88,13 @@ export async function registerRoutes(
     }
     
     if (session?.isFactoryUser && session?.factoryId) {
+      // A factory that has been deactivated or deleted loses access immediately
+      const factory = await storage.getFactory(session.factoryId);
+      if (!factory || !factory.isActive) {
+        return req.session.destroy(() =>
+          res.status(401).json({ message: "This factory account is deactivated" }),
+        );
+      }
       req.isFactorySession = true;
       req.isAdminSession = false;
       req.factoryId = session.factoryId;
@@ -63,8 +117,14 @@ export async function registerRoutes(
       const validatedData = factoryLoginSchema.parse(req.body);
       
       // Check for admin login first
-      if (validatedData.username === ADMIN_USERNAME && validatedData.password === ADMIN_PASSWORD) {
+      if (
+        ADMIN_USERNAME &&
+        ADMIN_PASSWORD &&
+        safeEqual(validatedData.username, ADMIN_USERNAME) &&
+        safeEqual(validatedData.password, ADMIN_PASSWORD)
+      ) {
         // Store admin session
+        await regenerateSession(req);
         (req.session as any).isAdmin = true;
         (req.session as any).isFactoryUser = false;
         (req.session as any).factoryId = null;
@@ -92,6 +152,7 @@ export async function registerRoutes(
       }
       
       // Store factory session
+      await regenerateSession(req);
       (req.session as any).factoryId = factory.id;
       (req.session as any).factoryName = factory.name;
       (req.session as any).isFactoryUser = true;
@@ -277,10 +338,31 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Only admins can update factories" });
       }
 
-      const { password, ...otherData } = req.body;
+      const parsed = updateFactorySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0].message });
+      }
+      const { password, ...otherData } = parsed.data;
       const updateData: any = { ...otherData };
       if (password && password.trim() !== "") {
+        if (password.trim().length < 6) {
+          return res.status(400).json({ message: "Password must be at least 6 characters" });
+        }
         updateData.passwordHash = await bcrypt.hash(password, 10);
+      }
+
+      // Code and username must stay unique
+      if (updateData.code) {
+        const other = await storage.getFactoryByCode(updateData.code);
+        if (other && other.id !== req.params.id) {
+          return res.status(400).json({ message: "Factory code already exists" });
+        }
+      }
+      if (updateData.username) {
+        const other = await storage.getFactoryByUsername(updateData.username);
+        if (other && other.id !== req.params.id) {
+          return res.status(400).json({ message: "Username already exists" });
+        }
       }
 
       const factory = await storage.updateFactory(req.params.id, updateData);
@@ -350,10 +432,19 @@ export async function registerRoutes(
 
       const created = await storage.createGarments(garmentsToCreate);
       
+      // Earliest creation time of this lot, so the client can print just these labels
+      const createdTimes = created
+        .map((g) => (g.createdAt ? new Date(g.createdAt).getTime() : NaN))
+        .filter((t) => !isNaN(t));
+      const createdSince = createdTimes.length
+        ? new Date(createdTimes.reduce((a, b) => Math.min(a, b))).toISOString()
+        : null;
+
       res.status(201).json({
         count: created.length,
         factoryId: validatedData.factoryId,
         factoryCode: factory.code,
+        createdSince,
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -367,10 +458,19 @@ export async function registerRoutes(
   // Scan routes
   app.post("/api/scan", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
-      const { garmentId, location, direction, clientScanId } = req.body;
+      const { garmentId, location, direction, clientScanId } = req.body ?? {};
 
       if (!garmentId || !location || !direction) {
         return res.status(400).json({ message: "Missing required fields" });
+      }
+      if (typeof garmentId !== "string" || garmentId.length > 100) {
+        return res.status(400).json({ message: "Invalid garment ID" });
+      }
+      if (!SCAN_LOCATIONS.includes(location) || !SCAN_DIRECTIONS.includes(direction)) {
+        return res.status(400).json({ message: "Invalid location or direction" });
+      }
+      if (req.isFactorySession && location !== "factory") {
+        return res.status(403).json({ message: "Factory users can only scan at the factory" });
       }
 
       if (clientScanId) {
@@ -411,16 +511,10 @@ export async function registerRoutes(
         clientScanId: clientScanId || null,
       });
 
-      if (direction === "IN") {
-        const newStatus = location === "factory" ? "at_factory" : "at_laundry";
-        await storage.updateGarmentStatus(garment.id, newStatus);
-      } else {
-        // OUT at factory → heading to laundry; OUT at laundry → heading to factory
-        const newStatus = location === "factory" ? "at_laundry" : "at_factory";
-        await storage.updateGarmentStatus(garment.id, newStatus);
-      }
+      // IN: it's here. OUT at factory → heading to laundry; OUT at laundry → heading to factory
+      await storage.updateGarmentStatus(garment.id, statusAfterScan(location, direction));
 
-      broadcast("scan", { garmentId, direction, location });
+      broadcast("scan", { garmentId, direction, location }, garment.factoryId);
 
       res.json({
         garmentId,
@@ -459,6 +553,22 @@ export async function registerRoutes(
       if (!location || !direction || !factoryId || !garmentIds?.length) {
         return res.status(400).json({ message: "Missing required fields" });
       }
+      if (!SCAN_LOCATIONS.includes(location) || !SCAN_DIRECTIONS.includes(direction)) {
+        return res.status(400).json({ message: "Invalid location or direction" });
+      }
+      if (
+        !Array.isArray(garmentIds) ||
+        garmentIds.length > 5000 ||
+        garmentIds.some((g: unknown) => typeof g !== "string")
+      ) {
+        return res.status(400).json({ message: "Invalid garment list" });
+      }
+      if (req.isFactorySession && location !== "factory") {
+        return res.status(403).json({ message: "Factory users can only scan at the factory" });
+      }
+      if (!(await storage.getFactory(factoryId))) {
+        return res.status(404).json({ message: "Factory not found" });
+      }
 
       let userId: string;
       let userFactoryId: string | null = null;
@@ -495,7 +605,7 @@ export async function registerRoutes(
         userId,
       });
 
-      broadcast("batch_complete", { batchNumber, totalItems: completedBatch.totalItems, factoryId, direction });
+      broadcast("batch_complete", { batchNumber, totalItems: completedBatch.totalItems, factoryId, direction }, factoryId);
 
       res.status(201).json({
         batchId: completedBatch.id,
@@ -993,7 +1103,25 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Factory not found" });
       }
 
-      const garments = await storage.getGarments(req.params.id);
+      let garments = await storage.getGarments(req.params.id);
+
+      // 70 x 38 mm thermal labels (?format=label[&mode=print][&since=ISO date])
+      if (req.query.format === "label") {
+        const since = req.query.since ? new Date(String(req.query.since)) : null;
+        if (since && !isNaN(since.getTime())) {
+          garments = garments.filter((g) => g.createdAt && new Date(g.createdAt) >= since);
+        }
+        if (garments.length === 0) {
+          return res.status(404).json({ message: "No garments to print labels for" });
+        }
+        const factoryLine = `${factory.name} (${factory.code})`;
+        return generateLabelPdf(
+          res,
+          garments.map((g) => ({ garmentId: g.garmentId, garmentType: g.garmentType, size: g.size, factoryLine })),
+          `${factory.code}_Labels_70x38mm_${garments.length}.pdf`,
+          req.query.mode === "print",
+        );
+      }
 
       // Create PDF document
       const doc = new PDFDocument({ size: "A4", margin: 30 });
@@ -1136,6 +1264,19 @@ export async function registerRoutes(
         if (g) garmentsList.push({ garmentId: g.garmentId, garmentType: g.garmentType, size: g.size });
       }
 
+      if (req.query.format === "label") {
+        if (garmentsList.length === 0) {
+          return res.status(404).json({ message: "This batch has no garments" });
+        }
+        const factoryLine = `${factory?.name || "Unknown"} (${factory?.code || "N/A"})`;
+        return generateLabelPdf(
+          res,
+          garmentsList.map((g) => ({ ...g, factoryLine })),
+          `${batch.batchNumber}_Labels_70x38mm.pdf`,
+          req.query.mode === "print",
+        );
+      }
+
       const title = `${factory?.name || "Unknown"} (${factory?.code || "N/A"}) — Batch ${batch.batchNumber}`;
       const filename = `${batch.batchNumber}_Barcodes.pdf`;
 
@@ -1173,6 +1314,27 @@ export async function registerRoutes(
         seen.add(ev.garmentId);
         const g = await storage.getGarment(ev.garmentId);
         if (g) garmentsList.push({ garmentId: g.garmentId, garmentType: g.garmentType, size: g.size });
+      }
+
+      if (req.query.format === "label") {
+        if (garmentsList.length === 0) {
+          return res.status(404).json({ message: "No garments were scanned on this date" });
+        }
+        // Each label shows the garment's own factory
+        const factoryLines = new Map<string, string>();
+        const items = [];
+        for (const item of garmentsList) {
+          const g = await storage.getGarmentByGarmentId(item.garmentId);
+          const fid = g?.factoryId || factoryId;
+          let line = fid ? factoryLines.get(fid) : undefined;
+          if (!line) {
+            const f = fid ? await storage.getFactory(fid) : undefined;
+            line = f ? `${f.name} (${f.code})` : factoryName;
+            if (fid) factoryLines.set(fid, line);
+          }
+          items.push({ ...item, factoryLine: line });
+        }
+        return generateLabelPdf(res, items, `Labels_70x38mm_${date}.pdf`, req.query.mode === "print");
       }
 
       const title = `${factoryName} — Scans ${date}`;
@@ -1301,7 +1463,8 @@ export async function registerRoutes(
         let subtotalCents = 0;
         processedLines = lines.map((l: any) => {
           const qty = parseInt(l.quantity, 10) || 0;
-          const up = Math.round(parseFloat(l.unitPrice) * 100) || 80;
+          const parsedPrice = parseFloat(l.unitPrice);
+          const up = Number.isFinite(parsedPrice) ? Math.round(parsedPrice * 100) : 80;
           const amt = qty * up;
           subtotalCents += amt;
           return {

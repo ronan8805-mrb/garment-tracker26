@@ -15,14 +15,21 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
+// The web app, Android app and Windows app all load pages from this same server,
+// so no other website needs access. Extra origins can be allowed with
+// CORS_ORIGINS (comma-separated) if ever needed.
+const extraOrigins = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
 app.use(cors({
   origin: process.env.NODE_ENV === "production"
-    ? true
-    : ["http://localhost:5000", "http://localhost:5173"],
+    ? extraOrigins
+    : ["http://localhost:5000", "http://localhost:5173", ...extraOrigins],
   credentials: true,
 }));
 
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: false }));
 
 export function log(message: string, source = "express") {
