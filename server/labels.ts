@@ -74,8 +74,8 @@ function fitText(text: string, x: number, top: number, widthMm: number, bold: bo
   return { text, x, top, sizePt: size, bold, width: Math.min(measure(text, bold, size), widthMm) };
 }
 
-/** Code 128 bars, each module a whole number of printer dots, centred across the label */
-function barcodeSpec(value: string, dot: number, topMm: number, heightMm: number): BarcodeSpec {
+/** Code 128 bars, each module a whole number of printer dots, starting `leftMm` from the label edge */
+function barcodeSpec(value: string, dot: number, topMm: number, heightMm: number, leftMm: number): BarcodeSpec {
   const enc: any = {};
   JsBarcode(enc, value, { format: "CODE128" });
   const bits: string = enc.encodings.map((e: any) => e.data).join("");
@@ -84,7 +84,7 @@ function barcodeSpec(value: string, dot: number, topMm: number, heightMm: number
   let module = 4;
   while (module > 1 && (bits.length + quiet) * module * dot > maxWidth) module--;
   return {
-    x: Math.round((LABEL_W / dot - bits.length * module) / 2),
+    x: Math.round(leftMm / dot),
     y: Math.round(topMm / dot),
     h: Math.round(heightMm / dot),
     module,
@@ -110,17 +110,25 @@ function qrSpec(value: string, dot: number, xMm: number, yMm: number, maxMm: num
 /** The whole label on the printer's dot grid (texts stay in mm) */
 export function buildLabelSpec(item: LabelItem, dpi = DEFAULT_DPI): LabelSpec {
   const dot = 25.4 / dpi;
-  const barcode = barcodeSpec(item.garmentId, dot, 2.5, 13);
+  // Barcode top left (lined up with the QR code), size in big letters top right
+  const barTop = 2.5, barHeight = 13;
+  const barcode = barcodeSpec(item.garmentId, dot, barTop, barHeight, 3);
   const qr = qrSpec(item.garmentId, dot, 3, 18, 17);
   const tx = 3 + qr.n * qr.cell * dot + 2.5;
   const tw = LABEL_W - tx - 2.5;
+
+  const barEnd = (barcode.x + barcode.bits.length * barcode.module) * dot;
+  const sizeLeft = barEnd + 10 * barcode.module * dot + 1.5; // after the barcode's quiet zone
+  const sizeRight = LABEL_W - 4;
+  const sizeRun = fitText(item.size.toUpperCase(), sizeLeft, 0, sizeRight - sizeLeft, true, 30, 8);
+  sizeRun.x = sizeRight - sizeRun.width; // right-aligned
+  sizeRun.top = barTop + (barHeight - HELVETICA_ASCENT * sizeRun.sizePt * PT_MM) / 2; // centred on the barcode
+
   const texts = [
     fitText(item.factoryLine, tx, 18.6, tw, true, 12),
     fitText(item.garmentId, tx, 24, tw, true, 7.5),
-    fitText(
-      [item.garmentType, item.colour, `SIZE ${item.size}`].filter(Boolean).join("  ·  ").toUpperCase(),
-      tx, 28.2, tw, true, 9,
-    ),
+    fitText([item.garmentType, item.colour].filter(Boolean).join("  ·  ").toUpperCase(), tx, 28.2, tw, true, 9),
+    sizeRun,
   ];
   return { barcode, qr, texts };
 }
