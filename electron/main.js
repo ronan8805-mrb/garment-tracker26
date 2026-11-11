@@ -19,6 +19,9 @@ const APP_ORIGIN = new URL(PRODUCTION_URL).origin;
 
 // Exact printer name to use; otherwise the first printer called "SQUIX" or "cab"
 const LABEL_PRINTER = process.env.LAUNDRYTRACK_LABEL_PRINTER || "";
+// Distance from the top of one label to the top of the next, in mm (the
+// Thermopatch 70 x 38 tags on the SQUIX: 38). 0 = leave it to the driver.
+const LABEL_PITCH_MM = process.env.LAUNDRYTRACK_LABEL_PITCH_MM !== undefined ? Number(process.env.LAUNDRYTRACK_LABEL_PITCH_MM) || 0 : 38;
 // For testing: save the label pictures in this folder instead of printing
 const DRY_RUN_DIR = process.env.LAUNDRYTRACK_LABEL_DRYRUN || "";
 
@@ -26,7 +29,8 @@ const PRINT_SCRIPT = String.raw`
 param(
   [Parameter(Mandatory = $true)][ValidateSet('Info', 'Print')][string]$Action,
   [Parameter(Mandatory = $true)][string]$Printer,
-  [string]$Dir = ''
+  [string]$Dir = '',
+  [double]$PitchMm = 0
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -81,7 +85,72 @@ $doc.add_PrintPage({
   $script:next++
   $e.HasMorePages = ($script:next -lt $files.Count)
 })
+
+if ($PitchMm -le 0) {
+  $doc.Print()
+  Write-Output ('{"printed":' + $files.Count + '}')
+  exit 0
+}
+
+# The driver tells the printer the label pitch is the page length (36 mm),
+# but the real distance from one label to the next is longer, so the printer
+# drifts and feeds blank labels. Let the driver render the job to a file,
+# put the real pitch into its label size command, and send that to the printer.
+$raw = Join-Path ([IO.Path]::GetTempPath()) ('laundrytrack-' + [guid]::NewGuid().ToString('N') + '.prn')
+$doc.DocumentName = 'LaundryTrack labels ' + [IO.Path]::GetFileNameWithoutExtension($raw)
+$doc.PrinterSettings.PrintToFile = $true
+$doc.PrinterSettings.PrintFileName = $raw
 $doc.Print()
+
+# The spooler writes the file in the background: wait for the job to finish
+$deadline = (Get-Date).AddSeconds(120)
+do {
+  Start-Sleep -Milliseconds 200
+  $pending = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object { $_.Document -eq $doc.DocumentName }).Count
+} while ($pending -gt 0 -and (Get-Date) -lt $deadline)
+if (-not (Test-Path -LiteralPath $raw)) { throw 'The printer driver did not produce the labels' }
+
+$latin1 = [Text.Encoding]::GetEncoding(28591)
+$text = $latin1.GetString([IO.File]::ReadAllBytes($raw))
+$pitch = $PitchMm.ToString('0.00', [Globalization.CultureInfo]::InvariantCulture)
+$script:patched = 0
+$text = [regex]::Replace($text, '(?m)^(S\s*l1;[-0-9.]+,[-0-9.]+,[0-9.]+,)[0-9.]+,', [Text.RegularExpressions.MatchEvaluator]{
+  param($m)
+  $script:patched++
+  $m.Groups[1].Value + $pitch + ','
+})
+if ($script:patched -lt 1) { throw 'Could not set the label pitch (label size command not found)' }
+
+Add-Type -TypeDefinition @'
+using System; using System.Runtime.InteropServices;
+public static class LaundryTrackRaw {
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public class DOCINFO { public string pDocName; public string pOutputFile; public string pDataType; }
+  [DllImport("winspool.drv", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool OpenPrinter(string name, out IntPtr h, IntPtr d);
+  [DllImport("winspool.drv", SetLastError=true)] static extern bool ClosePrinter(IntPtr h);
+  [DllImport("winspool.drv", CharSet=CharSet.Unicode, SetLastError=true)] static extern int StartDocPrinter(IntPtr h, int level, [In] DOCINFO di);
+  [DllImport("winspool.drv", SetLastError=true)] static extern bool EndDocPrinter(IntPtr h);
+  [DllImport("winspool.drv", SetLastError=true)] static extern bool StartPagePrinter(IntPtr h);
+  [DllImport("winspool.drv", SetLastError=true)] static extern bool EndPagePrinter(IntPtr h);
+  [DllImport("winspool.drv", SetLastError=true)] static extern bool WritePrinter(IntPtr h, byte[] b, int n, out int w);
+  public static void Send(string printer, string docName, byte[] data) {
+    IntPtr h;
+    if (!OpenPrinter(printer, out h, IntPtr.Zero)) throw new Exception("Could not open printer " + printer);
+    try {
+      if (StartDocPrinter(h, 1, new DOCINFO { pDocName = docName, pDataType = "RAW" }) == 0) throw new Exception("Could not start the print job");
+      StartPagePrinter(h);
+      int written;
+      if (!WritePrinter(h, data, data.Length, out written) || written != data.Length) throw new Exception("Could not send the labels to the printer");
+      EndPagePrinter(h);
+      EndDocPrinter(h);
+    } finally { ClosePrinter(h); }
+  }
+}
+'@
+try {
+  [LaundryTrackRaw]::Send($Printer, 'LaundryTrack labels', $latin1.GetBytes($text))
+} finally {
+  Remove-Item -LiteralPath $raw -ErrorAction SilentlyContinue
+}
 Write-Output ('{"printed":' + $files.Count + '}')
 `;
 
@@ -173,7 +242,7 @@ ipcMain.handle("labels:print", async (event, printer, images) => {
       for (const f of fs.readdirSync(dir)) fs.copyFileSync(path.join(dir, f), path.join(DRY_RUN_DIR, `${stamp}-${f}`));
       return { ok: true, printed: images.length, dryRun: true };
     }
-    await powershell(["-Action", "Print", "-Printer", printer, "-Dir", dir], 10 * 60_000);
+    await powershell(["-Action", "Print", "-Printer", printer, "-Dir", dir, "-PitchMm", String(LABEL_PITCH_MM)], 10 * 60_000);
     return { ok: true, printed: images.length };
   } catch (err) {
     return { ok: false, message: err.message };
