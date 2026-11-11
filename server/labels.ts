@@ -110,19 +110,20 @@ function qrSpec(value: string, dot: number, xMm: number, yMm: number, maxMm: num
 /** The whole label on the printer's dot grid (texts stay in mm) */
 export function buildLabelSpec(item: LabelItem, dpi = DEFAULT_DPI): LabelSpec {
   const dot = 25.4 / dpi;
-  // Barcode top left (lined up with the QR code), size in big letters top right
+  // Size in big letters top right; barcode centred in the space to its left
   const barTop = 2.5, barHeight = 13;
-  const barcode = barcodeSpec(item.garmentId, dot, barTop, barHeight, 3);
+  const left = 3, sizeRight = LABEL_W - 4;
+  const probe = barcodeSpec(item.garmentId, dot, barTop, barHeight, left);
+  const barWidth = probe.bits.length * probe.module * dot;
+  const quiet = 10 * probe.module * dot + 1.5; // barcode quiet zone plus a little air
+  const sizeRun = fitText(item.size.toUpperCase(), 0, 0, Math.max(5, sizeRight - left - barWidth - quiet), true, 24, 8);
+  sizeRun.x = sizeRight - sizeRun.width; // right-aligned
+  sizeRun.top = barTop + (barHeight - HELVETICA_ASCENT * sizeRun.sizePt * PT_MM) / 2; // centred on the barcode
+  const space = sizeRun.x - quiet - left;
+  const barcode = barcodeSpec(item.garmentId, dot, barTop, barHeight, left + Math.max(0, (space - barWidth) / 2));
   const qr = qrSpec(item.garmentId, dot, 3, 18, 17);
   const tx = 3 + qr.n * qr.cell * dot + 2.5;
   const tw = LABEL_W - tx - 2.5;
-
-  const barEnd = (barcode.x + barcode.bits.length * barcode.module) * dot;
-  const sizeLeft = barEnd + 10 * barcode.module * dot + 1.5; // after the barcode's quiet zone
-  const sizeRight = LABEL_W - 4;
-  const sizeRun = fitText(item.size.toUpperCase(), sizeLeft, 0, sizeRight - sizeLeft, true, 30, 8);
-  sizeRun.x = sizeRight - sizeRun.width; // right-aligned
-  sizeRun.top = barTop + (barHeight - HELVETICA_ASCENT * sizeRun.sizePt * PT_MM) / 2; // centred on the barcode
 
   const texts = [
     fitText(item.factoryLine, tx, 18.6, tw, true, 12),
