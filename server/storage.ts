@@ -20,9 +20,11 @@ import {
   type InsertInvoice,
   type InvoiceLine,
   type InsertInvoiceLine,
+  type MissingGarment,
   statusAfterScan,
 } from "@shared/schema";
 import { db } from "./db";
+import { classifyMissing, type GarmentWithLastScan } from "./missing";
 import { eq, and, desc, sql } from "drizzle-orm";
 
 export interface IStorage {
@@ -41,6 +43,15 @@ export interface IStorage {
   getGarmentByGarmentId(garmentId: string): Promise<Garment | undefined>;
   createGarments(garmentsData: InsertGarment[]): Promise<Garment[]>;
   updateGarmentStatus(id: string, status: "at_factory" | "at_laundry"): Promise<void>;
+
+  // Missing garments: not seen for `days`, plus written-off garments
+  getMissingReport(opts: { factoryId?: string; days: number }): Promise<{
+    missing: MissingGarment[];
+    writtenOff: MissingGarment[];
+  }>;
+  /** "Found": clears any write-off and restarts the missing countdown */
+  markGarmentFound(id: string): Promise<Garment | undefined>;
+  writeOffGarment(id: string): Promise<Garment | undefined>;
 
   // Scan event operations
   createScanEvent(event: InsertScanEvent): Promise<ScanEvent>;
@@ -171,6 +182,64 @@ export class DatabaseStorage implements IStorage {
 
   async updateGarmentStatus(id: string, status: "at_factory" | "at_laundry"): Promise<void> {
     await db.update(garments).set({ status }).where(eq(garments.id, id));
+  }
+
+  async getMissingReport({ factoryId, days }: { factoryId?: string; days: number }) {
+    // Each garment with its latest scan; the database only returns garments that
+    // could be missing or written off, the final rules live in classifyMissing.
+    const factoryFilter = factoryId ? sql`AND g.factory_id = ${factoryId}` : sql``;
+    const result = await db.execute(sql`
+      SELECT g.id, g.garment_id, g.factory_id, g.garment_type, g.size, g.status,
+             g.created_at, g.missing_reset_at, g.written_off_at,
+             ls.scanned_at AS last_scan_at, ls.location AS last_location, ls.direction AS last_direction
+      FROM garments g
+      LEFT JOIN LATERAL (
+        SELECT e.scanned_at, e.location, e.direction
+        FROM scan_events e
+        WHERE e.garment_id = g.id
+        ORDER BY e.scanned_at DESC
+        LIMIT 1
+      ) ls ON true
+      WHERE (
+        g.written_off_at IS NOT NULL
+        OR COALESCE(GREATEST(ls.scanned_at, g.created_at, g.missing_reset_at), 'epoch'::timestamp)
+           < now()::timestamp - make_interval(days => ${days}::int)
+      )
+      ${factoryFilter}
+    `);
+    const rows: GarmentWithLastScan[] = (result.rows as any[]).map((r) => ({
+      id: r.id,
+      garmentId: r.garment_id,
+      factoryId: r.factory_id,
+      garmentType: r.garment_type,
+      size: r.size,
+      status: r.status,
+      createdAt: r.created_at ? new Date(r.created_at) : null,
+      missingResetAt: r.missing_reset_at ? new Date(r.missing_reset_at) : null,
+      writtenOffAt: r.written_off_at ? new Date(r.written_off_at) : null,
+      lastScanAt: r.last_scan_at ? new Date(r.last_scan_at) : null,
+      lastLocation: r.last_location ?? null,
+      lastDirection: r.last_direction ?? null,
+    }));
+    return classifyMissing(rows, days);
+  }
+
+  async markGarmentFound(id: string): Promise<Garment | undefined> {
+    const [updated] = await db
+      .update(garments)
+      .set({ missingResetAt: new Date(), writtenOffAt: null })
+      .where(eq(garments.id, id))
+      .returning();
+    return updated;
+  }
+
+  async writeOffGarment(id: string): Promise<Garment | undefined> {
+    const [updated] = await db
+      .update(garments)
+      .set({ writtenOffAt: new Date() })
+      .where(eq(garments.id, id))
+      .returning();
+    return updated;
   }
 
   // Scan event operations

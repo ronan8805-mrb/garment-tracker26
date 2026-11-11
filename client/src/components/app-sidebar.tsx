@@ -8,6 +8,7 @@ import {
   LogOut,
   Building2,
   Receipt,
+  AlertTriangle,
 } from "lucide-react";
 import {
   Sidebar,
@@ -44,6 +45,7 @@ export function AppSidebar({ userProfile, isFactorySession, isAdminSession }: Ap
     { title: "Garments", url: "/garments", icon: Shirt },
     { title: "Scanning", url: "/scan", icon: ScanLine },
     { title: "Reports", url: "/reports", icon: FileText },
+    { title: "Missing", url: "/missing", icon: AlertTriangle },
     { title: "Invoices", url: "/invoices", icon: Receipt },
   ];
 
@@ -52,6 +54,7 @@ export function AppSidebar({ userProfile, isFactorySession, isAdminSession }: Ap
     { title: "Scanning", url: "/scan", icon: ScanLine },
     { title: "Garments", url: "/garments", icon: Shirt },
     { title: "Reports", url: "/reports", icon: FileText },
+    { title: "Missing", url: "/missing", icon: AlertTriangle },
   ];
 
   const items = isAdmin ? adminItems : factoryItems;

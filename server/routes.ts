@@ -218,9 +218,12 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Access denied" });
       }
       const stats = await storage.getAdminDashboardStats();
+      const { missing } = await storage.getMissingReport({ days: MISSING_DAYS });
       res.json({
         ...stats,
         recentFactories: stats.recentFactories.map(stripPasswordHash),
+        missingCount: missing.length,
+        missingDays: MISSING_DAYS,
       });
     } catch (error) {
       console.error("Error fetching admin dashboard:", error);
@@ -245,7 +248,8 @@ export async function registerRoutes(
       }
       
       const stats = await storage.getFactoryDashboardStats(factoryId);
-      res.json(stats);
+      const { missing } = await storage.getMissingReport({ factoryId, days: MISSING_DAYS });
+      res.json({ ...stats, missingCount: missing.length, missingDays: MISSING_DAYS });
     } catch (error) {
       console.error("Error fetching factory dashboard:", error);
       res.status(500).json({ message: "Failed to fetch dashboard data" });
@@ -524,6 +528,127 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error processing scan:", error);
       res.status(500).json({ message: "Failed to process scan" });
+    }
+  });
+
+  // ========================================================================
+  // Missing garments: not scanned for MISSING_DAYS (default 28 = 4 weeks)
+  // ========================================================================
+  const MISSING_DAYS = (() => {
+    const n = parseInt(process.env.MISSING_DAYS ?? "28", 10);
+    return Number.isFinite(n) && n >= 0 ? n : 28;
+  })();
+
+  // Admins can filter by ?factory=; factory logins only ever see their own
+  const missingScope = (req: any): string | undefined =>
+    req.isAdminSession ? (req.query.factory as string | undefined) || undefined : req.factoryId;
+
+  app.get("/api/missing", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      const report = await storage.getMissingReport({ factoryId: missingScope(req), days: MISSING_DAYS });
+      res.json({ days: MISSING_DAYS, ...report });
+    } catch (error) {
+      console.error("Error fetching missing garments:", error);
+      res.status(500).json({ message: "Failed to fetch missing garments" });
+    }
+  });
+
+  app.post("/api/garments/:id/found", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      if (!req.isAdminSession) return res.status(403).json({ message: "Admin only" });
+      const garment = await storage.markGarmentFound(req.params.id);
+      if (!garment) return res.status(404).json({ message: "Garment not found" });
+      broadcast("garment_update", { garmentId: garment.garmentId }, garment.factoryId);
+      res.json(garment);
+    } catch (error) {
+      console.error("Error marking garment found:", error);
+      res.status(500).json({ message: "Failed to mark garment as found" });
+    }
+  });
+
+  app.post("/api/garments/:id/write-off", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      if (!req.isAdminSession) return res.status(403).json({ message: "Admin only" });
+      const garment = await storage.writeOffGarment(req.params.id);
+      if (!garment) return res.status(404).json({ message: "Garment not found" });
+      broadcast("garment_update", { garmentId: garment.garmentId }, garment.factoryId);
+      res.json(garment);
+    } catch (error) {
+      console.error("Error writing off garment:", error);
+      res.status(500).json({ message: "Failed to write off garment" });
+    }
+  });
+
+  // A4 PDF report of missing (and written-off) garments
+  app.get("/api/missing/report", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      const factoryId = missingScope(req);
+      const { missing, writtenOff } = await storage.getMissingReport({ factoryId, days: MISSING_DAYS });
+      const factories = await storage.getFactories();
+      const factoryName = new Map(factories.map((f) => [f.id, `${f.name} (${f.code})`]));
+      const scopeName = factoryId ? factoryName.get(factoryId) || "Unknown factory" : "All factories";
+      const fmt = (d: Date | null) =>
+        d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : "-";
+      const where = (g: any) =>
+        g.lastSeenReason === "found"
+          ? "Marked found"
+          : g.lastSeenReason === "created"
+            ? "Never scanned"
+            : `${g.lastDirection} at ${g.lastLocation}`;
+
+      const doc = new PDFDocument({ size: "A4", margin: 36 });
+      const stamp = new Date().toISOString().slice(0, 10);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename="Missing_Garments_${stamp}.pdf"`);
+      doc.pipe(res);
+
+      doc.font("Helvetica-Bold").fontSize(16).text("Mr Bubbles Express — Missing Garments", { align: "center" });
+      doc.font("Helvetica").fontSize(9).fillColor("#555")
+        .text(`${scopeName}  ·  Not scanned for ${MISSING_DAYS} days or more  ·  Generated ${new Date().toLocaleString("en-GB")}`, { align: "center" });
+      doc.fillColor("#000").moveDown(1);
+
+      const cols = [
+        { title: "Garment ID", w: 150 },
+        { title: "Factory", w: 100 },
+        { title: "Type", w: 75 },
+        { title: "Size", w: 32 },
+        { title: "Last seen", w: 58 },
+        { title: "Where", w: 75 },
+        { title: "Days", w: 33 },
+      ];
+      const table = (title: string, rows: any[], dateOf: (g: any) => Date | null) => {
+        doc.font("Helvetica-Bold").fontSize(12).text(`${title} (${rows.length})`, 36);
+        doc.moveDown(0.3);
+        const header = () => {
+          let x = 36;
+          const y = doc.y;
+          doc.font("Helvetica-Bold").fontSize(8);
+          for (const c of cols) { doc.text(c.title, x, y, { width: c.w - 4, lineBreak: false }); x += c.w; }
+          doc.moveTo(36, y + 11).lineTo(559, y + 11).lineWidth(0.5).stroke();
+          doc.y = y + 15;
+        };
+        header();
+        if (rows.length === 0) {
+          doc.font("Helvetica").fontSize(9).text("None", 36);
+        }
+        for (const g of rows) {
+          if (doc.y > 790) { doc.addPage(); header(); }
+          const y = doc.y;
+          const cells = [g.garmentId, factoryName.get(g.factoryId) || "-", g.garmentType, g.size, fmt(dateOf(g)), where(g), String(g.daysMissing)];
+          let x = 36;
+          doc.font("Helvetica").fontSize(8);
+          // height + ellipsis keep every cell on one line
+          cells.forEach((v, i) => { doc.text(v, x, y, { width: cols[i].w - 4, height: 10, ellipsis: true }); x += cols[i].w; });
+          doc.y = y + 13;
+        }
+        doc.moveDown(1);
+      };
+      table("Missing", missing, (g) => g.lastSeenAt);
+      table("Written off", writtenOff, (g) => g.lastSeenAt);
+      doc.end();
+    } catch (error) {
+      console.error("Error generating missing report:", error);
+      if (!res.headersSent) res.status(500).json({ message: "Failed to generate missing report" });
     }
   });
 

@@ -14,6 +14,7 @@ function invalidateDashboards() {
   queryClient.invalidateQueries({ queryKey: ["/api/garments"] });
   queryClient.invalidateQueries({ queryKey: ["/api/batches"] });
   queryClient.invalidateQueries({ queryKey: ["/api/scan-dates"] });
+  queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/missing") });
 }
 
 function connect() {
@@ -27,7 +28,7 @@ function connect() {
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
-        if (msg.event === "scan" || msg.event === "batch_complete") {
+        if (msg.event === "scan" || msg.event === "batch_complete" || msg.event === "garment_update") {
           invalidateDashboards();
         }
       } catch {

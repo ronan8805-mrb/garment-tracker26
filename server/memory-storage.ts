@@ -16,6 +16,7 @@ import type {
   InsertInvoiceLine,
 } from "@shared/schema";
 import { statusAfterScan } from "@shared/schema";
+import { classifyMissing } from "./missing";
 import type { IStorage } from "./storage";
 
 // ---------------------------------------------------------------------------
@@ -166,9 +167,52 @@ export class MemoryStorage implements IStorage {
       size: g.size,
       status: g.status ?? "at_factory",
       createdAt: now(),
+      missingResetAt: null,
+      writtenOffAt: null,
     }));
     this._garments.push(...records);
     return records;
+  }
+
+  async getMissingReport({ factoryId, days }: { factoryId?: string; days: number }) {
+    const list = factoryId
+      ? this._garments.filter((g) => g.factoryId === factoryId)
+      : this._garments;
+    const rows = list.map((g) => {
+      const last = this._scanEvents
+        .filter((e) => e.garmentId === g.id)
+        .sort((a, b) => (b.scannedAt?.getTime() ?? 0) - (a.scannedAt?.getTime() ?? 0))[0];
+      return {
+        id: g.id,
+        garmentId: g.garmentId,
+        factoryId: g.factoryId,
+        garmentType: g.garmentType,
+        size: g.size,
+        status: g.status,
+        createdAt: g.createdAt ?? null,
+        missingResetAt: g.missingResetAt ?? null,
+        writtenOffAt: g.writtenOffAt ?? null,
+        lastScanAt: last?.scannedAt ?? null,
+        lastLocation: last?.location ?? null,
+        lastDirection: last?.direction ?? null,
+      };
+    });
+    return classifyMissing(rows, days);
+  }
+
+  async markGarmentFound(id: string): Promise<Garment | undefined> {
+    const g = this._garments.find((x) => x.id === id);
+    if (!g) return undefined;
+    g.missingResetAt = now();
+    g.writtenOffAt = null;
+    return g;
+  }
+
+  async writeOffGarment(id: string): Promise<Garment | undefined> {
+    const g = this._garments.find((x) => x.id === id);
+    if (!g) return undefined;
+    g.writtenOffAt = now();
+    return g;
   }
 
   async updateGarmentStatus(

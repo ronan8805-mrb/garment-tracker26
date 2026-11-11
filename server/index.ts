@@ -6,6 +6,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { setupWebSocket } from "./websocket";
+import { ensureSchema } from "./db";
 
 const app = express();
 const httpServer = createServer(app);
@@ -68,6 +69,7 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  await ensureSchema();
   const wsBroadcast = setupWebSocket(httpServer);
   await registerRoutes(httpServer, app, wsBroadcast);
 

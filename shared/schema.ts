@@ -43,6 +43,10 @@ export const garments = pgTable("garments", {
   size: varchar("size", { length: 10 }).notNull(),
   status: garmentStatusEnum("status").notNull().default("at_factory"),
   createdAt: timestamp("created_at").defaultNow(),
+  // Set by the "Found" button: restarts the missing countdown without a scan
+  missingResetAt: timestamp("missing_reset_at"),
+  // Set by "Write off": the garment is treated as lost until it is scanned again
+  writtenOffAt: timestamp("written_off_at"),
 }, (table) => [
   index("idx_garments_factory_id").on(table.factoryId),
   index("idx_garments_status").on(table.status),
@@ -60,6 +64,7 @@ export const scanEvents = pgTable("scan_events", {
   scannedAt: timestamp("scanned_at").defaultNow(),
 }, (table) => [
   index("idx_scan_events_garment_id").on(table.garmentId),
+  index("idx_scan_events_garment_scanned").on(table.garmentId, table.scannedAt),
   index("idx_scan_events_batch_id").on(table.batchId),
   index("idx_scan_events_scanned_at").on(table.scannedAt),
   index("idx_scan_events_client_scan_id").on(table.clientScanId),
@@ -264,6 +269,26 @@ export type InsertInvoiceLine = z.infer<typeof insertInvoiceLineSchema>;
 export type BulkGarmentInput = z.infer<typeof bulkGarmentSchema>;
 
 export type FactoryLoginInput = z.infer<typeof factoryLoginSchema>;
+
+/** A garment that hasn't been seen for the missing threshold, or has been written off */
+export interface MissingGarment {
+  id: string;
+  garmentId: string;
+  factoryId: string;
+  garmentType: string;
+  size: string;
+  status: "at_factory" | "at_laundry";
+  createdAt: Date | null;
+  /** Latest of: last scan, label created, marked found */
+  lastSeenAt: Date | null;
+  /** What lastSeenAt is: a scan, the label being created, or the Found button */
+  lastSeenReason: "scan" | "created" | "found";
+  lastScanAt: Date | null;
+  lastLocation: "factory" | "laundry" | null;
+  lastDirection: "IN" | "OUT" | null;
+  daysMissing: number;
+  writtenOffAt: Date | null;
+}
 
 export const SCAN_LOCATIONS = ["factory", "laundry"] as const;
 export const SCAN_DIRECTIONS = ["IN", "OUT"] as const;

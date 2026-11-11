@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import type { Factory as FactoryType, ScanBatch } from "@shared/schema";
+import { MissingBanner } from "@/components/missing-banner";
 
 interface FactoryBreakdown {
   id: string;
@@ -42,6 +43,8 @@ interface DashboardStats {
   recentBatches: ScanBatch[];
   recentFactories: FactoryType[];
   factoryBreakdown: FactoryBreakdown[];
+  missingCount?: number;
+  missingDays?: number;
 }
 
 export default function AdminDashboard() {
@@ -101,6 +104,8 @@ export default function AdminDashboard() {
           color="green"
         />
       </div>
+
+      <MissingBanner count={stats?.missingCount} days={stats?.missingDays} />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">

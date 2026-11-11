@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 import type { Garment, ScanBatch } from "@shared/schema";
+import { MissingBanner } from "@/components/missing-banner";
 
 interface FactoryDashboardStats {
   factoryName: string;
@@ -21,6 +22,8 @@ interface FactoryDashboardStats {
   atFactory: number;
   atLaundry: number;
   recentBatches: ScanBatch[];
+  missingCount?: number;
+  missingDays?: number;
 }
 
 export default function FactoryDashboard() {
@@ -58,6 +61,8 @@ export default function FactoryDashboard() {
           </Button>
         </div>
       </div>
+
+      <MissingBanner count={stats?.missingCount} days={stats?.missingDays} />
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card>

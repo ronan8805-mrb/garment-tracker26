@@ -58,6 +58,7 @@ In Railway → your Node.js service → Variables tab, add:
 | `ADMIN_USERNAME` | your admin username |
 | `ADMIN_PASSWORD` | your admin password |
 | `NODE_ENV` | `production` |
+| `MISSING_DAYS` | *(optional)* days without a scan before a garment shows as missing. Default `28` (4 weeks) |
 | `LABEL_DPI` | *(optional)* `200` (default) or `300` — resolution of the label printer, so barcode bars land on whole printer dots |
 | `CORS_ORIGINS` | *(optional)* comma-separated extra websites allowed to call the API. Leave unset: the web, Android and Windows apps don't need it |
 
