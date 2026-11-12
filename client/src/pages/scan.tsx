@@ -109,19 +109,33 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
         setPendingCount(await getPendingCount());
         return { garmentId: garmentCode, queued: true, clientScanId: queued.clientScanId };
       }
-      return apiRequest("POST", "/api/scan", {
-        garmentId: garmentCode,
-        location,
-        direction,
-        factoryId: isAdmin ? factoryId : userProfile?.factoryId,
-      });
+      try {
+        return await apiRequest("POST", "/api/scan", {
+          garmentId: garmentCode,
+          location,
+          direction,
+          factoryId: isAdmin ? factoryId : userProfile?.factoryId,
+        });
+      } catch (err) {
+        // "Failed to fetch": the device says it is online but the server can't
+        // be reached (no internet on the Wi-Fi, signal drop). Keep the scan and
+        // send it automatically when the connection is back.
+        if (err instanceof TypeError) {
+          const queued = await queueScan(garmentCode, location, direction);
+          setPendingCount(await getPendingCount());
+          return { garmentId: garmentCode, queued: true, clientScanId: queued.clientScanId };
+        }
+        throw err;
+      }
     },
     onSuccess: (response: any) => {
       const newItem: ScannedItem = {
         garmentId: response.garmentId,
         garment: response.garment,
         status: "success",
-        message: response.queued ? `Queued offline (${direction} at ${location})` : `Scanned ${direction} at ${location}`,
+        message: response.queued
+          ? `No connection — saved, will send when back online (${direction} at ${location})`
+          : `Scanned ${direction} at ${location}`,
         timestamp: new Date(),
       };
       setScannedItems((prev) => [newItem, ...prev]);
