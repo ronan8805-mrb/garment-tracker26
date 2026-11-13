@@ -679,6 +679,85 @@ export async function registerRoutes(
     return true;
   };
 
+  // ── Backups ─────────────────────────────────────────────────────────────
+  // Full copy of every factory, garment, scan, batch and invoice, so the
+  // garment records behind the heat-pressed labels can always be restored.
+  const backupDate = () => new Date().toISOString().slice(0, 10);
+
+  app.get("/api/backup", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      if (!req.isAdminSession) return res.status(403).json({ message: "Only the admin can download backups" });
+      const data = await storage.exportAll();
+      const factories = data.factories.map(({ passwordHash, ...f }: any) => f);
+      const backup = {
+        app: "LaundryTrack",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        counts: {
+          factories: factories.length,
+          garments: data.garments.length,
+          scanEvents: data.scanEvents.length,
+          scanBatches: data.scanBatches.length,
+          invoices: data.invoices.length,
+        },
+        ...data,
+        factories,
+      };
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="LaundryTrack_backup_${backupDate()}.json"`);
+      res.setHeader("Cache-Control", "no-store");
+      res.send(JSON.stringify(backup, null, 1));
+    } catch (error) {
+      console.error("Error creating backup:", error);
+      res.status(500).json({ message: "Failed to create the backup" });
+    }
+  });
+
+  app.get("/api/backup/garments.csv", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      if (!req.isAdminSession) return res.status(403).json({ message: "Only the admin can download backups" });
+      const data = await storage.exportAll();
+      const factoryById = new Map(data.factories.map((f) => [f.id, f]));
+      const lastScan = new Map<string, Date>();
+      for (const ev of data.scanEvents) {
+        const t = ev.scannedAt ? new Date(ev.scannedAt) : null;
+        if (!t) continue;
+        const prev = lastScan.get(ev.garmentId);
+        if (!prev || t > prev) lastScan.set(ev.garmentId, t);
+      }
+      const cell = (v: unknown) => {
+        const text = v === null || v === undefined ? "" : String(v);
+        return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+      };
+      const rows = [["Garment ID", "Factory", "Factory code", "Type", "Size", "Colour", "Status", "Created", "Last scanned"]];
+      const sorted = [...data.garments].sort((a, b) => a.garmentId.localeCompare(b.garmentId, undefined, { numeric: true }));
+      for (const g of sorted) {
+        const f = factoryById.get(g.factoryId);
+        const scanned = lastScan.get(g.id);
+        rows.push([
+          g.garmentId,
+          f?.name ?? "",
+          f?.code ?? "",
+          g.garmentType,
+          g.size,
+          g.colour ?? "",
+          g.status === "at_laundry" ? "At laundry" : "At factory",
+          g.createdAt ? new Date(g.createdAt).toISOString().replace("T", " ").slice(0, 16) : "",
+          scanned ? scanned.toISOString().replace("T", " ").slice(0, 16) : "",
+        ]);
+      }
+      // BOM so Excel opens it as UTF-8
+      const csv = "\ufeff" + rows.map((r) => r.map(cell).join(",")).join("\r\n") + "\r\n";
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="LaundryTrack_garments_${backupDate()}.csv"`);
+      res.setHeader("Cache-Control", "no-store");
+      res.send(csv);
+    } catch (error) {
+      console.error("Error creating garment list:", error);
+      res.status(500).json({ message: "Failed to create the garment list" });
+    }
+  });
+
   app.delete("/api/factories/:id", isAuthenticatedOrFactory, deleteLimiter, async (req: any, res) => {
     try {
       if (!confirmDeletePassword(req, res)) return;

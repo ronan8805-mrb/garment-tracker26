@@ -35,6 +35,15 @@ export interface DeleteFactoryResult {
   invoices: number;
 }
 
+export interface BackupData {
+  factories: Factory[];
+  garments: Garment[];
+  scanEvents: ScanEvent[];
+  scanBatches: ScanBatch[];
+  invoices: Invoice[];
+  invoiceLines: InvoiceLine[];
+}
+
 export interface IStorage {
   // Factory operations
   getFactories(): Promise<Factory[]>;
@@ -47,6 +56,8 @@ export interface IStorage {
 
   // Garment operations
   getGarments(factoryId?: string): Promise<Garment[]>;
+  /** Everything in the database, for backups */
+  exportAll(): Promise<BackupData>;
   getGarment(id: string): Promise<Garment | undefined>;
   getGarmentByGarmentId(garmentId: string): Promise<Garment | undefined>;
   createGarments(garmentsData: InsertGarment[]): Promise<Garment[]>;
@@ -170,6 +181,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Garment operations
+  async exportAll(): Promise<BackupData> {
+    const [f, g, se, sb, inv, lines] = await Promise.all([
+      db.select().from(factories),
+      db.select().from(garments),
+      db.select().from(scanEvents),
+      db.select().from(scanBatches),
+      db.select().from(invoices),
+      db.select().from(invoiceLines),
+    ]);
+    return { factories: f, garments: g, scanEvents: se, scanBatches: sb, invoices: inv, invoiceLines: lines };
+  }
+
   async getGarments(factoryId?: string): Promise<Garment[]> {
     if (factoryId) {
       return db.select().from(garments).where(eq(garments.factoryId, factoryId)).orderBy(desc(garments.createdAt));
@@ -652,8 +675,16 @@ export class DatabaseStorage implements IStorage {
   }
 }
 
-// Use in-memory storage when no DATABASE_URL is configured (local dev without DB)
+// Use in-memory storage only for local testing without a database. In
+// production a missing DATABASE_URL must stop the app: running on temporary
+// memory would silently lose every garment created or scanned.
 import { MemoryStorage } from "./memory-storage";
+if (!process.env.DATABASE_URL && process.env.NODE_ENV === "production" && process.env.ALLOW_MEMORY_STORAGE !== "1") {
+  throw new Error(
+    "DATABASE_URL is not set. Refusing to start without the database so no garments are ever lost. " +
+      "(For a local test without a database set ALLOW_MEMORY_STORAGE=1.)",
+  );
+}
 export const storage: IStorage = process.env.DATABASE_URL
   ? new DatabaseStorage()
   : new MemoryStorage();

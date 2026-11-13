@@ -49,6 +49,7 @@ import {
   Printer,
   Tag,
   Trash2,
+  DatabaseBackup,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -709,6 +710,33 @@ export default function ReportsPage() {
                     No factories available
                   </p>
                 )}
+              </CardContent>
+            </Card>
+          )}
+
+          {isAdminSession && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Backup</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Keep your own copy of every garment and scan. Download a backup each week and save it
+                  somewhere safe (USB stick, Google Drive, email).
+                </p>
+                <Button className="w-full" onClick={() => downloadFile("/api/backup")} data-testid="button-backup-full">
+                  <DatabaseBackup className="w-4 h-4 mr-2" />
+                  Full backup (all data)
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => downloadFile("/api/backup/garments.csv")}
+                  data-testid="button-backup-garments"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Garment list (Excel)
+                </Button>
               </CardContent>
             </Card>
           )}

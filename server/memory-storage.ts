@@ -17,7 +17,7 @@ import type {
 } from "@shared/schema";
 import { statusAfterScan } from "@shared/schema";
 import { classifyMissing } from "./missing";
-import type { IStorage, DeleteFactoryResult } from "./storage";
+import type { IStorage, DeleteFactoryResult, BackupData } from "./storage";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -140,6 +140,17 @@ export class MemoryStorage implements IStorage {
   }
 
   // ---- Garments ------------------------------------------------------------
+
+  async exportAll(): Promise<BackupData> {
+    return {
+      factories: [...this._factories],
+      garments: [...this._garments],
+      scanEvents: [...this._scanEvents],
+      scanBatches: [...this._scanBatches],
+      invoices: [...this._invoices],
+      invoiceLines: [...this._invoiceLines],
+    };
+  }
 
   async getGarments(factoryId?: string): Promise<Garment[]> {
     const list = factoryId
