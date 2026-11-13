@@ -1,4 +1,5 @@
-const { app, BrowserWindow, Menu, ipcMain } = require("electron");
+const { app, BrowserWindow, Menu, ipcMain, net, session } = require("electron");
+const crypto = require("crypto");
 const { execFile } = require("child_process");
 const fs = require("fs");
 const os = require("os");
@@ -288,7 +289,96 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(createWindow);
+// ---------------------------------------------------------------------------
+// Automatic backups to this PC
+//
+// The garment labels are heat-pressed onto the garments for good, so the data
+// behind them must never be lost. While the app is open it downloads a full
+// backup (every factory, garment, scan, batch and invoice) and a garment list
+// for Excel into Documents\LaundryTrack Backups, using the admin login the
+// app already has. A new dated copy is kept whenever anything has changed;
+// old copies are never deleted. The *_LATEST files are always the newest.
+
+const BACKUP_DIR = process.env.LAUNDRYTRACK_BACKUP_DIR || path.join(app.getPath("documents"), "LaundryTrack Backups");
+const BACKUP_EVERY_MS = 3 * 60 * 60 * 1000; // every 3 hours while the app is open
+
+function getWithAppLogin(url) {
+  return new Promise((resolve, reject) => {
+    const request = net.request({ url, session: session.defaultSession, useSessionCookies: true });
+    const chunks = [];
+    request.on("response", (response) => {
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => resolve({ status: response.statusCode, body: Buffer.concat(chunks) }));
+      response.on("error", reject);
+    });
+    request.on("error", reject);
+    request.end();
+  });
+}
+
+let backupRunning = false;
+
+/** Returns true when a backup was saved */
+async function backupToPc() {
+  if (backupRunning) return false;
+  backupRunning = true;
+  try {
+    const full = await getWithAppLogin(`${PRODUCTION_URL}/api/backup`);
+    if (full.status !== 200) {
+      console.log(`Backup skipped: server answered ${full.status} (not logged in as admin?)`);
+      return false;
+    }
+    const data = JSON.parse(full.body.toString("utf8"));
+    if (!Array.isArray(data.garments) || !Array.isArray(data.factories)) throw new Error("backup file looks wrong");
+    const csv = await getWithAppLogin(`${PRODUCTION_URL}/api/backup/garments.csv`);
+
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const { exportedAt, ...content } = data;
+    const hash = crypto.createHash("sha256").update(JSON.stringify(content)).digest("hex");
+    const hashFile = path.join(BACKUP_DIR, ".last-backup-hash");
+    const lastHash = fs.existsSync(hashFile) ? fs.readFileSync(hashFile, "utf8").trim() : "";
+
+    // Always refresh the "latest" copies
+    fs.writeFileSync(path.join(BACKUP_DIR, "LaundryTrack_backup_LATEST.json"), full.body);
+    if (csv.status === 200) fs.writeFileSync(path.join(BACKUP_DIR, "LaundryTrack_garments_LATEST.csv"), csv.body);
+
+    // Keep a dated copy whenever something changed
+    if (hash !== lastHash) {
+      const stamp = new Date().toISOString().slice(0, 16).replace("T", "_").replace(":", "-");
+      fs.writeFileSync(path.join(BACKUP_DIR, `LaundryTrack_backup_${stamp}.json`), full.body);
+      if (csv.status === 200) fs.writeFileSync(path.join(BACKUP_DIR, `LaundryTrack_garments_${stamp}.csv`), csv.body);
+      fs.writeFileSync(hashFile, hash);
+    }
+    fs.writeFileSync(
+      path.join(BACKUP_DIR, "last-backup.txt"),
+      `Last backup: ${new Date().toString()}\r\nGarments: ${data.garments.length}\r\nFactories: ${data.factories.length}\r\nScans: ${(data.scanEvents || []).length}\r\n`,
+    );
+    console.log(`Backup saved to ${BACKUP_DIR} (${data.garments.length} garments)`);
+    return true;
+  } catch (err) {
+    console.error("Backup failed:", err);
+    return false;
+  } finally {
+    backupRunning = false;
+  }
+}
+
+function startBackups() {
+  // Try every minute until the admin is logged in and a backup is saved,
+  // then every 3 hours
+  const loop = async () => {
+    const saved = await backupToPc();
+    setTimeout(loop, saved ? BACKUP_EVERY_MS : 60_000);
+  };
+  setTimeout(loop, 20_000);
+}
+
+// ---------------------------------------------------------------------------
+
+app.whenReady().then(() => {
+  createWindow();
+  startBackups();
+});
 
 app.on("window-all-closed", () => {
   app.quit();
