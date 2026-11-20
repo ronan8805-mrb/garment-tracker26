@@ -146,7 +146,7 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
         setTimeout(() => element.classList.remove("success-flash"), 500);
       }
     },
-    onError: (error: any) => {
+    onError: (error: any, garmentCode: string) => {
       const isDup = error.message?.includes("duplicate");
       if (isDup) {
         beepDuplicate();
@@ -154,7 +154,7 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
         beepError();
       }
       const newItem: ScannedItem = {
-        garmentId: scanInput,
+        garmentId: garmentCode,
         status: isDup ? "warning" : "error",
         message: error.message || "Scan failed",
         timestamp: new Date(),
@@ -212,22 +212,23 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
     if (!code.trim()) return;
     void beepScan();
 
-    const isDuplicate = scannedItems.some(
+    const earlier = scannedItems.find(
       (item) => item.garmentId === code && item.status === "success"
     );
     
-    if (isDuplicate) {
+    if (earlier) {
       beepDuplicate();
+      const firstTime = earlier.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
       const newItem: ScannedItem = {
         garmentId: code,
         status: "warning",
-        message: "Already scanned in this batch",
+        message: `Already scanned in this batch at ${firstTime} — same label on two garments?`,
         timestamp: new Date(),
       };
       setScannedItems((prev) => [newItem, ...prev]);
       toast({
         title: "Duplicate scan",
-        description: `${code} has already been scanned in this batch.`,
+        description: `${code} was already scanned in this batch at ${firstTime}. If this is a different garment, two garments have the same label.`,
       });
       return;
     }
