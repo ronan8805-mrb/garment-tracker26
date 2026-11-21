@@ -204,15 +204,18 @@ export class MemoryStorage implements IStorage {
       createdAt: now(),
       missingResetAt: null,
       writtenOffAt: null,
+      blockedAt: null,
+      blockedReason: null,
     }));
     this._garments.push(...records);
     return records;
   }
 
   async getMissingReport({ factoryId, days }: { factoryId?: string; days: number }) {
-    const list = factoryId
+    const list = (factoryId
       ? this._garments.filter((g) => g.factoryId === factoryId)
-      : this._garments;
+      : this._garments
+    ).filter((g) => !g.blockedAt);
     const rows = list.map((g) => {
       const last = this._scanEvents
         .filter((e) => e.garmentId === g.id)
@@ -366,6 +369,18 @@ export class MemoryStorage implements IStorage {
   ): Promise<void> {
     const idx = this._garments.findIndex((g) => g.id === id);
     if (idx !== -1) this._garments[idx].status = status;
+  }
+
+  async setGarmentsBlocked(ids: string[], reason: string | null): Promise<number> {
+    const wanted = new Set(ids);
+    let n = 0;
+    for (const g of this._garments) {
+      if (!wanted.has(g.id)) continue;
+      g.blockedAt = reason ? now() : null;
+      g.blockedReason = reason;
+      n++;
+    }
+    return n;
   }
 
   async updateGarmentDetails(
@@ -693,7 +708,8 @@ export class MemoryStorage implements IStorage {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const scannedIds = new Set(this._scanEvents.map((e) => e.garmentId));
-    const inUse = this._garments.filter((g) => scannedIds.has(g.id));
+    const live = this._garments.filter((g) => !g.blockedAt);
+    const inUse = live.filter((g) => scannedIds.has(g.id));
 
     const factoryBreakdown = this._factories.map((f) => {
       const fGarments = inUse.filter((g) => g.factoryId === f.id);
@@ -704,7 +720,7 @@ export class MemoryStorage implements IStorage {
         total: fGarments.length,
         atFactory: fGarments.filter((g) => g.status === "at_factory").length,
         atLaundry: fGarments.filter((g) => g.status === "at_laundry").length,
-        notScanned: this._garments.filter((g) => g.factoryId === f.id && !scannedIds.has(g.id)).length,
+        notScanned: live.filter((g) => g.factoryId === f.id && !scannedIds.has(g.id)).length,
       };
     });
 
@@ -712,7 +728,8 @@ export class MemoryStorage implements IStorage {
       totalFactories: this._factories.length,
       activeFactories: this._factories.filter((f) => f.isActive).length,
       totalGarments: inUse.length,
-      labelsNotScanned: this._garments.length - inUse.length,
+      labelsNotScanned: live.length - inUse.length,
+      labelsBlocked: this._garments.length - live.length,
       atFactory: inUse.filter((g) => g.status === "at_factory").length,
       atLaundry: inUse.filter((g) => g.status === "at_laundry").length,
       todayScans: this._scanEvents.filter(
@@ -737,7 +754,7 @@ export class MemoryStorage implements IStorage {
   async getFactoryDashboardStats(factoryId: string) {
     const factory = await this.getFactory(factoryId);
     const scannedIds = new Set(this._scanEvents.map((e) => e.garmentId));
-    const allLabels = this._garments.filter((g) => g.factoryId === factoryId);
+    const allLabels = this._garments.filter((g) => g.factoryId === factoryId && !g.blockedAt);
     const factoryGarments = allLabels.filter((g) => scannedIds.has(g.id));
     const recentBatches = [...this._scanBatches]
       .filter((b) => b.factoryId === factoryId)

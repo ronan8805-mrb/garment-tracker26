@@ -165,9 +165,14 @@ export default function GarmentsPage() {
       g.garmentType.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFactory = filterFactory === "all" || g.factoryId === filterFactory;
     const notScanned = g.scanned === false;
+    const blocked = !!g.blockedAt;
     const matchesStatus =
       filterStatus === "all" ||
-      (filterStatus === "not_scanned" ? notScanned : !notScanned && g.status === filterStatus);
+      (filterStatus === "blocked"
+        ? blocked
+        : filterStatus === "not_scanned"
+          ? notScanned && !blocked
+          : !notScanned && !blocked && g.status === filterStatus);
     const matchesDate = !filterDate || (g.createdAt &&
       new Date(g.createdAt).toLocaleDateString("en-CA") === filterDate);
     return matchesSearch && matchesFactory && matchesStatus && matchesDate;
@@ -275,6 +280,7 @@ export default function GarmentsPage() {
                 <SelectItem value="at_factory">At Factory</SelectItem>
                 <SelectItem value="at_laundry">At Laundry</SelectItem>
                 <SelectItem value="not_scanned">Not scanned yet</SelectItem>
+                <SelectItem value="blocked">Blocked (change label)</SelectItem>
               </SelectContent>
             </Select>
             <div className="relative">
@@ -343,7 +349,11 @@ export default function GarmentsPage() {
                           : "-"}
                       </TableCell>
                       <TableCell>
-                        {garment.scanned === false ? (
+                        {garment.blockedAt ? (
+                          <Badge variant="destructive" title={garment.blockedReason ?? undefined}>
+                            Blocked: change label
+                          </Badge>
+                        ) : garment.scanned === false ? (
                           <Badge variant="outline" className="text-muted-foreground">
                             Not scanned yet
                           </Badge>

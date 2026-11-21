@@ -68,6 +68,8 @@ export interface IStorage {
   getGarmentByGarmentId(garmentId: string): Promise<Garment | undefined>;
   createGarments(garmentsData: InsertGarment[]): Promise<Garment[]>;
   updateGarmentStatus(id: string, status: "at_factory" | "at_laundry"): Promise<void>;
+  /** Block labels (reason shown when scanned), or unblock them with reason null */
+  setGarmentsBlocked(ids: string[], reason: string | null): Promise<number>;
   /** Correct type / size / colour for these garments (ids are garments.id); returns how many changed */
   updateGarmentDetails(
     ids: string[],
@@ -153,6 +155,7 @@ export interface IStorage {
     activeFactories: number;
     totalGarments: number;
     labelsNotScanned: number;
+    labelsBlocked: number;
     atFactory: number;
     atLaundry: number;
     todayScans: number;
@@ -280,6 +283,16 @@ export class DatabaseStorage implements IStorage {
     await db.update(garments).set({ status }).where(eq(garments.id, id));
   }
 
+  async setGarmentsBlocked(ids: string[], reason: string | null): Promise<number> {
+    if (!ids.length) return 0;
+    const updated = await db
+      .update(garments)
+      .set(reason ? { blockedAt: new Date(), blockedReason: reason } : { blockedAt: null, blockedReason: null })
+      .where(inArray(garments.id, ids))
+      .returning({ id: garments.id });
+    return updated.length;
+  }
+
   async updateGarmentDetails(
     ids: string[],
     details: { garmentType?: string; size?: string; colour?: string | null },
@@ -309,7 +322,7 @@ export class DatabaseStorage implements IStorage {
         ORDER BY e.scanned_at DESC
         LIMIT 1
       ) ls ON true
-      WHERE (
+      WHERE g.blocked_at IS NULL AND (
         g.written_off_at IS NOT NULL
         OR COALESCE(GREATEST(ls.scanned_at, g.created_at, g.missing_reset_at), 'epoch'::timestamp)
            < now()::timestamp - make_interval(days => ${days}::int)
@@ -800,13 +813,16 @@ export class DatabaseStorage implements IStorage {
       })
       .from(factories);
 
-    const scanned = sql`exists (select 1 from ${scanEvents} where ${scanEvents.garmentId} = ${garments.id})`;
+    const everScanned = sql`exists (select 1 from ${scanEvents} where ${scanEvents.garmentId} = ${garments.id})`;
+    const live = sql`${garments.blockedAt} is null`;
+    const scanned = sql`(${live} and ${everScanned})`;
     const [garmentStats] = await db
       .select({
         total: sql<number>`count(*) filter (where ${scanned})::int`,
         atFactory: sql<number>`count(*) filter (where ${garments.status} = 'at_factory' and ${scanned})::int`,
         atLaundry: sql<number>`count(*) filter (where ${garments.status} = 'at_laundry' and ${scanned})::int`,
-        notScanned: sql<number>`count(*) filter (where not ${scanned})::int`,
+        notScanned: sql<number>`count(*) filter (where ${live} and not ${everScanned})::int`,
+        blocked: sql<number>`count(*) filter (where not ${live})::int`,
       })
       .from(garments);
 
@@ -828,7 +844,7 @@ export class DatabaseStorage implements IStorage {
         total: sql<number>`count(${garments.id}) filter (where ${scanned})::int`,
         atFactory: sql<number>`count(${garments.id}) filter (where ${garments.status} = 'at_factory' and ${scanned})::int`,
         atLaundry: sql<number>`count(${garments.id}) filter (where ${garments.status} = 'at_laundry' and ${scanned})::int`,
-        notScanned: sql<number>`count(${garments.id}) filter (where not ${scanned})::int`,
+        notScanned: sql<number>`count(${garments.id}) filter (where ${live} and not ${everScanned})::int`,
       })
       .from(factories)
       .leftJoin(garments, eq(garments.factoryId, factories.id))
@@ -840,6 +856,7 @@ export class DatabaseStorage implements IStorage {
       activeFactories: factoryStats.active,
       totalGarments: garmentStats.total,
       labelsNotScanned: garmentStats.notScanned,
+      labelsBlocked: garmentStats.blocked,
       atFactory: garmentStats.atFactory,
       atLaundry: garmentStats.atLaundry,
       todayScans: todayScansResult?.count || 0,
@@ -852,13 +869,15 @@ export class DatabaseStorage implements IStorage {
   async getFactoryDashboardStats(factoryId: string) {
     const factory = await this.getFactory(factoryId);
 
-    const scanned = sql`exists (select 1 from ${scanEvents} where ${scanEvents.garmentId} = ${garments.id})`;
+    const everScanned = sql`exists (select 1 from ${scanEvents} where ${scanEvents.garmentId} = ${garments.id})`;
+    const live = sql`${garments.blockedAt} is null`;
+    const scanned = sql`(${live} and ${everScanned})`;
     const [garmentStats] = await db
       .select({
         total: sql<number>`count(*) filter (where ${scanned})::int`,
         atFactory: sql<number>`count(*) filter (where ${garments.status} = 'at_factory' and ${scanned})::int`,
         atLaundry: sql<number>`count(*) filter (where ${garments.status} = 'at_laundry' and ${scanned})::int`,
-        notScanned: sql<number>`count(*) filter (where not ${scanned})::int`,
+        notScanned: sql<number>`count(*) filter (where ${live} and not ${everScanned})::int`,
       })
       .from(garments)
       .where(eq(garments.factoryId, factoryId));

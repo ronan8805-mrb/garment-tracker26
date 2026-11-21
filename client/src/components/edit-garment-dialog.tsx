@@ -173,6 +173,36 @@ export function EditGarmentDialog({
           </label>
         )}
 
+        {garment.blockedAt && (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm flex items-center justify-between gap-3">
+            <span>
+              <strong>Blocked</strong>
+              {garment.blockedReason ? `: ${garment.blockedReason}` : ""}. Scanning it says to change the label.
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              data-testid="button-unblock-garment"
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  await apiRequest("PATCH", `/api/garments/${garment.id}`, { blocked: false });
+                  await queryClient.invalidateQueries();
+                  toast({ title: "Label unblocked", description: `${garment.garmentId} can be scanned again.` });
+                  onClose();
+                } catch {
+                  toast({ title: "Not unblocked", variant: "destructive" });
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Unblock
+            </Button>
+          </div>
+        )}
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={busy}>
             Cancel

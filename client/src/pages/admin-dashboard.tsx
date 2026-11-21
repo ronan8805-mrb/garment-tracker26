@@ -39,6 +39,7 @@ interface DashboardStats {
   activeFactories: number;
   totalGarments: number;
   labelsNotScanned?: number;
+  labelsBlocked?: number;
   atFactory: number;
   atLaundry: number;
   todayScans: number;
@@ -85,11 +86,13 @@ export default function AdminDashboard() {
         <StatCard
           title="Garments in Use"
           value={stats?.totalGarments || 0}
-          subtitle={
-            stats?.labelsNotScanned
-              ? `Scanned at least once · ${stats.labelsNotScanned.toLocaleString()} more labels not scanned yet`
-              : "Scanned at least once"
-          }
+          subtitle={[
+            "Scanned at least once",
+            stats?.labelsNotScanned ? `${stats.labelsNotScanned.toLocaleString()} more labels not scanned yet` : "",
+            stats?.labelsBlocked ? `${stats.labelsBlocked.toLocaleString()} labels blocked` : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
           icon={Shirt}
           trend="up"
         />

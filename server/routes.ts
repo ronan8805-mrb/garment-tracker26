@@ -11,6 +11,7 @@ import {
   statusAfterScan,
   SCAN_LOCATIONS,
   SCAN_DIRECTIONS,
+  GARMENT_COLOURS,
 } from "@shared/schema";
 import { timingSafeEqual } from "crypto";
 import { z } from "zod";
@@ -390,9 +391,15 @@ export async function registerRoutes(
       if (!parsed.success) {
         return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid details" });
       }
-      const { wholeLot, ...details } = parsed.data;
+      const { wholeLot, blocked, ...details } = parsed.data;
       const garment = await storage.getGarment(String(req.params.id));
       if (!garment) return res.status(404).json({ message: "Garment not found" });
+      if (blocked === false) {
+        const updated = await storage.setGarmentsBlocked([garment.id], null);
+        if (Object.keys(details).length) await storage.updateGarmentDetails([garment.id], details);
+        broadcast("garment_update", { garmentsEdited: updated });
+        return res.json({ updated });
+      }
 
       let ids = [garment.id];
       if (wholeLot) {
@@ -536,6 +543,15 @@ export async function registerRoutes(
       // Validate factory access for factory users
       if (userFactoryId && garment.factoryId !== userFactoryId) {
         return res.status(403).json({ message: "This garment belongs to another factory" });
+      }
+
+      // A blocked label isn't a real garment: tell them to change the label
+      if (garment.blockedAt) {
+        return res.status(409).json({
+          blocked: true,
+          garmentId,
+          message: `CHANGE THE LABEL: ${garmentId} is blocked${garment.blockedReason ? ` (${garment.blockedReason})` : ""}. Not counted. Put a new label on this garment and scan the new one.`,
+        });
       }
 
       // The same label can't be scanned the same way twice in one day. A second
@@ -746,6 +762,67 @@ export async function registerRoutes(
     }
     return true;
   };
+
+  // "These are the only real ones": keep every garment of one colour that was
+  // received at the laundry on a day, and block every other label of that
+  // colour (spares, second labels). Scanning a blocked label says to change it.
+  const blockOthersSchema = z.object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    colour: z.enum(GARMENT_COLOURS),
+    factoryId: z.string().optional(),
+  });
+  const findOthersToBlock = async (date: string, colour: string, factoryId?: string) => {
+    const [dayScans, all] = await Promise.all([
+      storage.getScanEventsByDate(date, factoryId),
+      storage.getGarments(factoryId),
+    ]);
+    const receivedIds = new Set(
+      dayScans.filter((e) => e.location === "laundry" && e.direction === "IN").map((e) => e.garmentId),
+    );
+    const sameColour = all.filter((g) => (g.colour || "").toLowerCase() === colour.toLowerCase());
+    const keep = sameColour.filter((g) => receivedIds.has(g.id) && !g.blockedAt);
+    const block = sameColour
+      .filter((g) => !receivedIds.has(g.id) && !g.blockedAt)
+      .sort((a, b) => a.garmentId.localeCompare(b.garmentId));
+    return { keep, block };
+  };
+
+  app.post("/api/garments/block-others/preview", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      if (!req.isAdminSession) return res.status(403).json({ message: "Only the admin can block labels" });
+      const parsed = blockOthersSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ message: "Choose a day and a colour" });
+      const { date, colour, factoryId } = parsed.data;
+      const { keep, block } = await findOthersToBlock(date, colour, factoryId);
+      res.json({
+        keep: keep.length,
+        block: block.map((g) => ({ garmentId: g.garmentId, garmentType: g.garmentType, size: g.size })),
+      });
+    } catch (error) {
+      console.error("Error previewing label block:", error);
+      res.status(500).json({ message: "Failed to work out which labels to block" });
+    }
+  });
+
+  app.post("/api/garments/block-others", isAuthenticatedOrFactory, deleteLimiter, async (req: any, res) => {
+    try {
+      if (!confirmDeletePassword(req, res)) return;
+      const parsed = blockOthersSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ message: "Choose a day and a colour" });
+      const { date, colour, factoryId } = parsed.data;
+      const { keep, block } = await findOthersToBlock(date, colour, factoryId);
+      const day = new Date(date + "T12:00:00").toLocaleDateString("en-IE", { day: "numeric", month: "short" });
+      const blocked = await storage.setGarmentsBlocked(
+        block.map((g) => g.id),
+        `not one of the ${keep.length} ${colour.toLowerCase()} items received on ${day}`,
+      );
+      broadcast("garment_update", { labelsBlocked: blocked });
+      res.json({ kept: keep.length, blocked });
+    } catch (error) {
+      console.error("Error blocking labels:", error);
+      res.status(500).json({ message: "Failed to block the labels" });
+    }
+  });
 
   // ── Label print record ───────────────────────────────────────────────────
   // The Windows app reports every label it printed, and asks before printing
@@ -1735,7 +1812,7 @@ export async function registerRoutes(
         colour: string | null;
         total: number;
         sizes: Record<string, number>;
-        garments: { garmentId: string; size: string; status: string }[];
+        garments: { garmentId: string; size: string; status: string; blocked: boolean }[];
       };
       type Section = { location: string; direction: string; total: number; groups: Group[] };
       const sections = new Map<string, Section>();
@@ -1762,7 +1839,7 @@ export async function registerRoutes(
         }
         group.total++;
         group.sizes[g.size] = (group.sizes[g.size] || 0) + 1;
-        group.garments.push({ garmentId: g.garmentId, size: g.size, status: g.status });
+        group.garments.push({ garmentId: g.garmentId, size: g.size, status: g.status, blocked: !!g.blockedAt });
         section.total++;
       }
 

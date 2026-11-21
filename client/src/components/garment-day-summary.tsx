@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { DeleteWithPasswordDialog } from "@/components/delete-with-password";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowDownToLine, ArrowUpFromLine, Building2, CalendarDays, Shirt, WashingMachine } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Ban, Building2, CalendarDays, Shirt, WashingMachine } from "lucide-react";
 import type { Factory } from "@shared/schema";
 
 interface ScanDate {
@@ -18,7 +22,7 @@ interface Group {
   colour: string | null;
   total: number;
   sizes: Record<string, number>;
-  garments: { garmentId: string; size: string; status: string }[];
+  garments: { garmentId: string; size: string; status: string; blocked?: boolean }[];
 }
 
 interface Section {
@@ -76,6 +80,26 @@ export function GarmentDaySummary({ isAdmin, factories }: { isAdmin: boolean; fa
   const [factory, setFactory] = useState("all");
   const [date, setDate] = useState<string>("");
   const [open, setOpen] = useState<{ section: Section; group: Group } | null>(null);
+  const { toast } = useToast();
+  // "Only these are real": block every other label of a colour
+  const [blocking, setBlocking] = useState<{ colour: string; keep: number } | null>(null);
+  const [preview, setPreview] = useState<{ keep: number; block: { garmentId: string; garmentType: string; size: string }[] } | null>(null);
+  useEffect(() => {
+    setPreview(null);
+    if (!blocking || !date) return;
+    apiRequest("POST", "/api/garments/block-others/preview", {
+      date,
+      colour: blocking.colour,
+      ...(factory !== "all" ? { factoryId: factory } : {}),
+    })
+      .then(setPreview)
+      .catch(() => setPreview({ keep: blocking.keep, block: [] }));
+  }, [blocking, date, factory]);
+  const previewBySize = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const g of preview?.block ?? []) m[`${g.size} ${g.garmentType}`] = (m[`${g.size} ${g.garmentType}`] ?? 0) + 1;
+    return Object.entries(m).sort((a, b) => sizeRank(a[0].split(" ")[0]) - sizeRank(b[0].split(" ")[0]));
+  }, [preview]);
 
   const factoryParam = isAdmin && factory !== "all" ? `?factory=${factory}` : "";
   const { data: dates, isLoading: datesLoading } = useQuery<ScanDate[]>({
@@ -244,17 +268,103 @@ export function GarmentDaySummary({ isAdmin, factories }: { isAdmin: boolean; fa
                     <span className="font-mono">{g.garmentId}</span>
                     <span className="flex items-center gap-2">
                       <Badge variant="outline">{g.size}</Badge>
-                      <span className="text-xs text-muted-foreground">
-                        {g.status === "at_laundry" ? "At laundry" : "At factory"}
-                      </span>
+                      {g.blocked ? (
+                        <Badge variant="destructive">Blocked</Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          {g.status === "at_laundry" ? "At laundry" : "At factory"}
+                        </span>
+                      )}
                     </span>
                   </div>
                 ))}
               </div>
+              {isAdmin &&
+                open.section.location === "laundry" &&
+                open.section.direction === "IN" &&
+                open.group.colour && (
+                  <div className="rounded-md border p-3 space-y-2">
+                    <p className="text-sm">
+                      Are the {open.group.colour.toLowerCase()} items received here the only real{" "}
+                      {open.group.colour.toLowerCase()} ones? Block every other {open.group.colour.toLowerCase()} label,
+                      so scanning one says to change the label.
+                    </p>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      data-testid="button-block-other-labels"
+                      onClick={() => {
+                        const colour = open.group.colour!;
+                        const keep = open.section.groups
+                          .filter((g) => g.colour === colour)
+                          .reduce((n, g) => n + g.total, 0);
+                        setOpen(null);
+                        setBlocking({ colour, keep });
+                      }}
+                    >
+                      <Ban className="w-4 h-4 mr-2" />
+                      Keep only these: block every other {open.group.colour} label
+                    </Button>
+                  </div>
+                )}
             </>
           )}
         </DialogContent>
       </Dialog>
+
+      <DeleteWithPasswordDialog
+        open={!!blocking}
+        onOpenChange={(o) => !o && setBlocking(null)}
+        tone="destructive"
+        icon={<Ban className="w-5 h-5" />}
+        title={blocking ? `Block other ${blocking.colour} labels` : ""}
+        confirmLabel={preview ? `Block ${preview.block.length} labels` : "Block labels"}
+        busyLabel="Blocking…"
+        description={
+          <>
+            <p>
+              Keep the <strong>{preview?.keep ?? blocking?.keep ?? 0}</strong> {blocking?.colour.toLowerCase()} items
+              received at the laundry on {date ? formatDay(date) : ""}.
+            </p>
+            {!preview ? (
+              <p>Working out which labels…</p>
+            ) : preview.block.length === 0 ? (
+              <p>There are no other {blocking?.colour.toLowerCase()} labels to block.</p>
+            ) : (
+              <>
+                <p>
+                  Block the other <strong>{preview.block.length}</strong> {blocking?.colour.toLowerCase()} labels:
+                </p>
+                <ul className="list-disc pl-5">
+                  {previewBySize.map(([k, n]) => (
+                    <li key={k}>
+                      {k}: {n}
+                    </li>
+                  ))}
+                </ul>
+                <p>
+                  When one of these is scanned the app says <strong>CHANGE THE LABEL</strong> and doesn't count it.
+                  Nothing is deleted, and a label can be unblocked from Garments (pencil).
+                </p>
+              </>
+            )}
+          </>
+        }
+        onConfirm={async (password) => {
+          if (!blocking) return;
+          const result = await apiRequest("POST", "/api/garments/block-others", {
+            password,
+            date,
+            colour: blocking.colour,
+            ...(factory !== "all" ? { factoryId: factory } : {}),
+          });
+          queryClient.invalidateQueries();
+          toast({
+            title: `${result.blocked} ${blocking.colour.toLowerCase()} labels blocked`,
+            description: `Only the ${result.kept} ${blocking.colour.toLowerCase()} items received on ${formatDay(date)} count now.`,
+          });
+        }}
+      />
     </div>
   );
 }

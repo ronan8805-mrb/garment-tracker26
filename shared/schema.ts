@@ -49,6 +49,10 @@ export const garments = pgTable("garments", {
   missingResetAt: timestamp("missing_reset_at"),
   // Set by "Write off": the garment is treated as lost until it is scanned again
   writtenOffAt: timestamp("written_off_at"),
+  // A blocked label is not a real garment (a spare or a second label on a
+  // jacket): scanning it says to change the label, and it isn't counted
+  blockedAt: timestamp("blocked_at"),
+  blockedReason: text("blocked_reason"),
 }, (table) => [
   index("idx_garments_factory_id").on(table.factoryId),
   index("idx_garments_status").on(table.status),
@@ -259,8 +263,10 @@ export const garmentDetailsSchema = z
     size: z.string().trim().min(1).max(10).optional(),
     colour: z.enum(GARMENT_COLOURS).nullable().optional(),
     wholeLot: z.boolean().optional(),
+    /** false unblocks a blocked label */
+    blocked: z.literal(false).optional(),
   })
-  .refine((v) => v.garmentType !== undefined || v.size !== undefined || v.colour !== undefined, {
+  .refine((v) => v.garmentType !== undefined || v.size !== undefined || v.colour !== undefined || v.blocked !== undefined, {
     message: "Nothing to change",
   });
 

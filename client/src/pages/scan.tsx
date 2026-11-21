@@ -155,7 +155,9 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
     onError: (error: any, garmentCode: string) => {
       // apiRequest errors look like '409: {"message":"…"}'
       let text: string = error?.message || "Scan failed";
-      const isDup = text.startsWith("409") || text.includes("duplicate");
+      // A blocked label: the jacket needs a new label (an error, not a repeat)
+      const isBlocked = text.includes('"blocked":true');
+      const isDup = !isBlocked && (text.startsWith("409") || text.includes("duplicate"));
       const json = text.indexOf("{");
       if (json !== -1) {
         try {
@@ -177,7 +179,7 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
       setScannedItems((prev) => [newItem, ...prev]);
 
       toast({
-        title: isDup ? "Already scanned today" : "Scan Error",
+        title: isBlocked ? "CHANGE THE LABEL" : isDup ? "Already scanned today" : "Scan Error",
         description: error.message,
         variant: isDup ? "default" : "destructive",
       });
