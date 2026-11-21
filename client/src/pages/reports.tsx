@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { DeleteWithPasswordDialog } from "@/components/delete-with-password";
+import { GarmentDaySummary } from "@/components/garment-day-summary";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,6 +51,7 @@ import {
   Tag,
   Trash2,
   DatabaseBackup,
+  Shirt,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -258,7 +260,7 @@ export default function ReportsPage() {
           <p className="text-muted-foreground">
             {isFactorySession
               ? "View your scan history and download reports"
-              : "View and download scan reports by date or batch"}
+              : "View and download scan reports by date, batch or garment"}
           </p>
         </div>
       </div>
@@ -275,7 +277,16 @@ export default function ReportsPage() {
                 <FileText className="w-4 h-4" />
                 By Batch
               </TabsTrigger>
+              <TabsTrigger value="garments" className="flex items-center gap-2" data-testid="tab-by-garment">
+                <Shirt className="w-4 h-4" />
+                By Garment
+              </TabsTrigger>
             </TabsList>
+
+            {/* ── BY GARMENT TAB: what was handled each day, by type and colour ── */}
+            <TabsContent value="garments">
+              <GarmentDaySummary isAdmin={isAdminSession} factories={factories} />
+            </TabsContent>
 
             {/* ── DAILY REPORTS TAB ── */}
             <TabsContent value="dates">

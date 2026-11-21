@@ -1567,6 +1567,83 @@ export async function registerRoutes(
   });
 
   // Barcode PDF for garments scanned on a specific date
+  // What was handled on one day, grouped by garment type and colour, IN and OUT
+  // separately (each garment counted once per direction and location)
+  app.get("/api/scan-dates/:date/summary", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      const date = req.params.date as string;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ message: "Invalid date format" });
+      }
+      let factoryId: string | undefined;
+      if (req.isAdminSession) {
+        factoryId = typeof req.query.factory === "string" && req.query.factory !== "all" ? req.query.factory : undefined;
+      } else if (req.isFactorySession) {
+        factoryId = req.factoryId;
+      }
+
+      const [events, garmentRows] = await Promise.all([
+        storage.getScanEventsByDate(date, factoryId),
+        storage.getGarments(factoryId),
+      ]);
+      const garmentById = new Map(garmentRows.map((g) => [g.id, g]));
+
+      type Group = {
+        type: string;
+        colour: string | null;
+        total: number;
+        sizes: Record<string, number>;
+        garments: { garmentId: string; size: string; status: string }[];
+      };
+      type Section = { location: string; direction: string; total: number; groups: Group[] };
+      const sections = new Map<string, Section>();
+      const seen = new Set<string>();
+      const inAtLaundry = new Set<string>();
+
+      for (const ev of events) {
+        const g = garmentById.get(ev.garmentId);
+        if (!g) continue;
+        const key = `${ev.location}:${ev.direction}`;
+        if (seen.has(`${key}:${g.id}`)) continue;
+        seen.add(`${key}:${g.id}`);
+        if (ev.location === "laundry" && ev.direction === "IN") inAtLaundry.add(g.id);
+
+        let section = sections.get(key);
+        if (!section) {
+          section = { location: ev.location, direction: ev.direction, total: 0, groups: [] };
+          sections.set(key, section);
+        }
+        let group = section.groups.find((x) => x.type === g.garmentType && x.colour === (g.colour ?? null));
+        if (!group) {
+          group = { type: g.garmentType, colour: g.colour ?? null, total: 0, sizes: {}, garments: [] };
+          section.groups.push(group);
+        }
+        group.total++;
+        group.sizes[g.size] = (group.sizes[g.size] || 0) + 1;
+        group.garments.push({ garmentId: g.garmentId, size: g.size, status: g.status });
+        section.total++;
+      }
+
+      const order = ["laundry:IN", "laundry:OUT", "factory:OUT", "factory:IN"];
+      const result = Array.from(sections.entries())
+        .sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
+        .map(([, s]) => {
+          s.groups.sort((a, b) => b.total - a.total || a.type.localeCompare(b.type));
+          for (const gr of s.groups) gr.garments.sort((a, b) => a.garmentId.localeCompare(b.garmentId, undefined, { numeric: true }));
+          return s;
+        });
+
+      // Of the garments received at the laundry that day, how many are still there now
+      const stillAtLaundry = Array.from(inAtLaundry).filter((id) => garmentById.get(id)?.status === "at_laundry").length;
+
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ date, sections: result, receivedAtLaundry: inAtLaundry.size, stillAtLaundry });
+    } catch (error) {
+      console.error("Error building day summary:", error);
+      res.status(500).json({ message: "Failed to build the summary" });
+    }
+  });
+
   app.get("/api/scan-dates/:date/barcodes", isAuthenticatedOrFactory, async (req: any, res) => {
     try {
       const date = req.params.date as string;
