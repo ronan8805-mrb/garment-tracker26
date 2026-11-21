@@ -26,6 +26,19 @@ export async function ensureSchema(): Promise<void> {
     `ALTER TABLE garments ADD COLUMN IF NOT EXISTS written_off_at timestamp`,
     `ALTER TABLE garments ADD COLUMN IF NOT EXISTS colour text`,
     `CREATE INDEX IF NOT EXISTS idx_scan_events_garment_scanned ON scan_events (garment_id, scanned_at)`,
+    `CREATE TABLE IF NOT EXISTS label_prints (
+       id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+       garment_id varchar(50) NOT NULL,
+       printer text,
+       printed_at timestamp DEFAULT now()
+     )`,
+    `CREATE INDEX IF NOT EXISTS idx_label_prints_garment_id ON label_prints (garment_id)`,
+    // First start only: labels made before the print record existed were
+    // printed already, so count each once (at the time it was made) and the
+    // app warns before printing any of them again.
+    `INSERT INTO label_prints (garment_id, printer, printed_at)
+       SELECT garment_id, 'printed before the print record started', created_at FROM garments
+       WHERE NOT EXISTS (SELECT 1 FROM label_prints)`,
   ];
   for (const statement of statements) {
     await pool.query(statement);

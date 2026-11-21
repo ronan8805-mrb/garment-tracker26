@@ -18,7 +18,7 @@ import JsBarcode from "jsbarcode";
 import { createCanvas } from "canvas";
 import bcrypt from "bcryptjs";
 import type { BroadcastFn } from "./websocket";
-import { sendLabels } from "./labels";
+import { sendLabels, generateLabelJson, parseDpi } from "./labels";
 
 // Constant-time string comparison, so the admin password can't be guessed by timing
 function safeEqual(a: string | undefined, b: string | undefined): boolean {
@@ -508,6 +508,43 @@ export async function registerRoutes(
         return res.status(403).json({ message: "This garment belongs to another factory" });
       }
 
+      // The same label can't be scanned the same way twice in one day. A second
+      // read is either the same jacket again or a second jacket wearing a copy
+      // of the label, and neither may be counted twice.
+      const dayStart = new Date();
+      dayStart.setHours(0, 0, 0, 0);
+      const earlier = await storage.getLatestScanSince(garment.id, location, direction, dayStart);
+      if (earlier) {
+        const at = earlier.scannedAt
+          ? new Date(earlier.scannedAt).toLocaleTimeString("en-US", {
+              timeZone: "Europe/Dublin",
+              hour: "numeric",
+              minute: "2-digit",
+              hour12: true,
+            })
+          : "earlier";
+        const way = direction === "OUT" ? "OUT" : "IN";
+        if (earlier.batchId) {
+          return res.status(409).json({
+            duplicate: true,
+            garmentId,
+            firstScanAt: earlier.scannedAt,
+            batchNumber: earlier.batchNumber,
+            message: `${garmentId} was already scanned ${way} today at ${at}${earlier.batchNumber ? ` (batch ${earlier.batchNumber.slice(-4)})` : ""}. Not counted again. If this is a different jacket, its label is a copy: put a new label on it.`,
+          });
+        }
+        // Scanned earlier today but that list was never saved as a batch: put
+        // it in this batch without adding a second scan.
+        return res.json({
+          garmentId,
+          garment,
+          scanEvent: earlier,
+          alreadyScanned: true,
+          firstScanAt: earlier.scannedAt,
+          message: `Already scanned ${way} today at ${at} but not saved in a batch, so it's added to this one (not counted twice). If this is a different jacket, its label is a copy: put a new label on it.`,
+        });
+      }
+
       const scanEvent = await storage.createScanEvent({
         garmentId: garment.id,
         location,
@@ -680,6 +717,52 @@ export async function registerRoutes(
     return true;
   };
 
+  // ── Label print record ───────────────────────────────────────────────────
+  // The Windows app reports every label it printed, and asks before printing
+  // which labels were printed before, so reprints can't quietly make two
+  // jackets with the same number.
+  const labelIdList = (value: unknown): string[] | null => {
+    if (!Array.isArray(value) || value.length > 5000) return null;
+    if (!value.every((v) => typeof v === "string" && v.length > 0 && v.length <= 50)) return null;
+    return value as string[];
+  };
+
+  app.post("/api/labels/printed", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      if (!req.isAdminSession) return res.status(403).json({ message: "Only the admin prints labels" });
+      const ids = labelIdList(req.body?.garmentIds);
+      if (!ids) return res.status(400).json({ message: "garmentIds must be a list of label numbers" });
+      const printer = typeof req.body?.printer === "string" ? req.body.printer.slice(0, 100) : null;
+      const recorded = await storage.recordLabelPrints(ids, printer);
+      res.json({ recorded });
+    } catch (error) {
+      console.error("Error recording label prints:", error);
+      res.status(500).json({ message: "Failed to record the printed labels" });
+    }
+  });
+
+  app.post("/api/labels/history", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      if (!req.isAdminSession) return res.status(403).json({ message: "Only the admin prints labels" });
+      const ids = labelIdList(req.body?.garmentIds);
+      if (!ids) return res.status(400).json({ message: "garmentIds must be a list of label numbers" });
+      res.json({ history: await storage.getLabelPrintHistory(ids) });
+    } catch (error) {
+      console.error("Error reading label print history:", error);
+      res.status(500).json({ message: "Failed to read the label print record" });
+    }
+  });
+
+  // A label to check the printer with: no real garment number on it, so it can never be a duplicate
+  app.get("/api/labels/test", isAuthenticatedOrFactory, async (req: any, res) => {
+    if (!req.isAdminSession) return res.status(403).json({ message: "Only the admin prints labels" });
+    generateLabelJson(
+      res,
+      [{ garmentId: "TEST-LABEL-NOT-A-GARMENT", garmentType: "TEST", size: "TEST", colour: null, factoryLine: "TEST LABEL - NOT A GARMENT" }],
+      parseDpi(req.query.dpi),
+    );
+  });
+
   // ── Backups ─────────────────────────────────────────────────────────────
   // Full copy of every factory, garment, scan, batch and invoice, so the
   // garment records behind the heat-pressed labels can always be restored.
@@ -700,6 +783,7 @@ export async function registerRoutes(
           scanEvents: data.scanEvents.length,
           scanBatches: data.scanBatches.length,
           invoices: data.invoices.length,
+          labelPrints: data.labelPrints.length,
         },
         ...data,
         factories,
@@ -1419,6 +1503,8 @@ export async function registerRoutes(
         if (garments.length === 0) {
           return res.status(404).json({ message: "No garments to print labels for" });
         }
+        // Always the same order (…-001, …-002, …), so "from label 6 to 50" means the same labels every time
+        garments = [...garments].sort((a, b) => a.garmentId.localeCompare(b.garmentId));
         const factoryLine = factory.name;
         return sendLabels(res,
           garments.map((g) => ({ garmentId: g.garmentId, garmentType: g.garmentType, size: g.size, colour: g.colour, factoryLine })),

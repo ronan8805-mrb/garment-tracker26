@@ -6,6 +6,7 @@ import {
   userProfiles,
   invoices,
   invoiceLines,
+  labelPrints,
   type Factory,
   type InsertFactory,
   type Garment,
@@ -20,6 +21,7 @@ import {
   type InsertInvoice,
   type InvoiceLine,
   type InsertInvoiceLine,
+  type LabelPrint,
   type MissingGarment,
   statusAfterScan,
 } from "@shared/schema";
@@ -42,7 +44,11 @@ export interface BackupData {
   scanBatches: ScanBatch[];
   invoices: Invoice[];
   invoiceLines: InvoiceLine[];
+  labelPrints: LabelPrint[];
 }
+
+/** How often each label number has been printed */
+export type LabelPrintHistory = Record<string, { count: number; lastAt: Date | null }>;
 
 export interface IStorage {
   // Factory operations
@@ -85,7 +91,18 @@ export interface IStorage {
   markGarmentFound(id: string): Promise<Garment | undefined>;
   writeOffGarment(id: string): Promise<Garment | undefined>;
 
+  // Label print record
+  recordLabelPrints(garmentIds: string[], printer: string | null): Promise<number>;
+  getLabelPrintHistory(garmentIds: string[]): Promise<LabelPrintHistory>;
+
   // Scan event operations
+  /** The garment's latest scan this way (location + direction) since a time, with its batch number */
+  getLatestScanSince(
+    garmentDbId: string,
+    location: "factory" | "laundry",
+    direction: "IN" | "OUT",
+    since: Date,
+  ): Promise<(ScanEvent & { batchNumber: string | null }) | undefined>;
   createScanEvent(event: InsertScanEvent): Promise<ScanEvent>;
   getScanEvents(garmentId?: string): Promise<ScanEvent[]>;
   getScanEventsByBatchId(batchId: string): Promise<ScanEvent[]>;
@@ -198,15 +215,38 @@ export class DatabaseStorage implements IStorage {
 
   // Garment operations
   async exportAll(): Promise<BackupData> {
-    const [f, g, se, sb, inv, lines] = await Promise.all([
+    const [f, g, se, sb, inv, lines, lp] = await Promise.all([
       db.select().from(factories),
       db.select().from(garments),
       db.select().from(scanEvents),
       db.select().from(scanBatches),
       db.select().from(invoices),
       db.select().from(invoiceLines),
+      db.select().from(labelPrints),
     ]);
-    return { factories: f, garments: g, scanEvents: se, scanBatches: sb, invoices: inv, invoiceLines: lines };
+    return { factories: f, garments: g, scanEvents: se, scanBatches: sb, invoices: inv, invoiceLines: lines, labelPrints: lp };
+  }
+
+  async recordLabelPrints(garmentIds: string[], printer: string | null): Promise<number> {
+    if (!garmentIds.length) return 0;
+    await db.insert(labelPrints).values(garmentIds.map((garmentId) => ({ garmentId, printer })));
+    return garmentIds.length;
+  }
+
+  async getLabelPrintHistory(garmentIds: string[]): Promise<LabelPrintHistory> {
+    const history: LabelPrintHistory = {};
+    if (!garmentIds.length) return history;
+    const rows = await db
+      .select({
+        garmentId: labelPrints.garmentId,
+        count: sql<number>`count(*)::int`,
+        lastAt: sql<Date | null>`max(${labelPrints.printedAt})`,
+      })
+      .from(labelPrints)
+      .where(inArray(labelPrints.garmentId, garmentIds))
+      .groupBy(labelPrints.garmentId);
+    for (const r of rows) history[r.garmentId] = { count: r.count, lastAt: r.lastAt ? new Date(r.lastAt) : null };
+    return history;
   }
 
   async getGarments(factoryId?: string): Promise<Garment[]> {
@@ -703,6 +743,29 @@ export class DatabaseStorage implements IStorage {
       await tx.delete(invoiceLines).where(eq(invoiceLines.invoiceId, id));
       await tx.delete(invoices).where(eq(invoices.id, id));
     });
+  }
+
+  async getLatestScanSince(
+    garmentDbId: string,
+    location: "factory" | "laundry",
+    direction: "IN" | "OUT",
+    since: Date,
+  ): Promise<(ScanEvent & { batchNumber: string | null }) | undefined> {
+    const [row] = await db
+      .select({ ev: scanEvents, batchNumber: scanBatches.batchNumber })
+      .from(scanEvents)
+      .leftJoin(scanBatches, eq(scanBatches.id, scanEvents.batchId))
+      .where(
+        and(
+          eq(scanEvents.garmentId, garmentDbId),
+          eq(scanEvents.location, location),
+          eq(scanEvents.direction, direction),
+          sql`${scanEvents.scannedAt} >= ${since}`,
+        ),
+      )
+      .orderBy(desc(scanEvents.scannedAt))
+      .limit(1);
+    return row ? { ...row.ev, batchNumber: row.batchNumber ?? null } : undefined;
   }
 
   async getScannedGarmentIds(): Promise<string[]> {

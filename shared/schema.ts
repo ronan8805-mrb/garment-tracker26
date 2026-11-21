@@ -72,6 +72,17 @@ export const scanEvents = pgTable("scan_events", {
   index("idx_scan_events_client_scan_id").on(table.clientScanId),
 ]);
 
+// Every label printed by the Windows app, one row per label, so reprints
+// (which make two jackets with the same number) can be spotted and warned about
+export const labelPrints = pgTable("label_prints", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  garmentId: varchar("garment_id", { length: 50 }).notNull(), // the label number (garments.garment_id)
+  printer: text("printer"),
+  printedAt: timestamp("printed_at").defaultNow(),
+}, (table) => [
+  index("idx_label_prints_garment_id").on(table.garmentId),
+]);
+
 // Scan batches table
 export const scanBatches = pgTable("scan_batches", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -260,6 +271,7 @@ export type InsertGarment = z.infer<typeof insertGarmentSchema>;
 export type ScanEvent = typeof scanEvents.$inferSelect;
 export type InsertScanEvent = z.infer<typeof insertScanEventSchema>;
 
+export type LabelPrint = typeof labelPrints.$inferSelect;
 export type ScanBatch = typeof scanBatches.$inferSelect;
 export type InsertScanBatch = z.infer<typeof insertScanBatchSchema>;
 

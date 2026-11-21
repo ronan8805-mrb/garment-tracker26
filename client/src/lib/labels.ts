@@ -115,14 +115,22 @@ function desktopApi(): DesktopApi | undefined {
   return typeof window !== "undefined" ? (window as any).electronAPI : undefined;
 }
 
-/** Which labels to print, counted from 1 (e.g. 6 to 50 to finish a run that stopped after 5) */
-export type LabelPrintChoice = { from: number; to: number };
+/**
+ * Which labels to print: a range counted from 1 (e.g. 6 to 50 to finish a run
+ * that stopped after 5), only the ones never printed before, or one test label
+ * with no real number on it.
+ */
+export type LabelPrintChoice = { from: number; to: number } | { onlyNew: true } | { test: true };
+
+/** How often each label number has been printed before, by label number */
+export type LabelPrintHistory = Record<string, { count: number; lastAt: string | null }>;
 
 export interface LabelPrintRequest {
   count: number;
   printer: string;
   /** Garment ID on each label, in print order */
   ids: string[];
+  printedBefore: LabelPrintHistory;
   answer: (choice: LabelPrintChoice | null) => void;
 }
 
@@ -137,7 +145,7 @@ export function onLabelPrintRequest(listener: (req: LabelPrintRequest) => void) 
   };
 }
 
-function askHowMany(ids: string[], printer: string): Promise<LabelPrintChoice | null> {
+function askHowMany(ids: string[], printer: string, printedBefore: LabelPrintHistory): Promise<LabelPrintChoice | null> {
   const count = ids.length;
   return new Promise((resolve) => {
     let done = false;
@@ -146,7 +154,7 @@ function askHowMany(ids: string[], printer: string): Promise<LabelPrintChoice | 
       done = true;
       resolve(choice);
     };
-    if (askListener) askListener({ count, printer, ids, answer });
+    if (askListener) askListener({ count, printer, ids, printedBefore, answer });
     else answer(window.confirm(`Print ${count} label${count === 1 ? "" : "s"} on ${printer}?`) ? { from: 1, to: count } : null);
   });
 }
@@ -226,15 +234,42 @@ async function printDirect(
   const job: LabelJob = await (await fetchOk(`${baseUrl}${sep}format=label&mode=json&dpi=${dpi}`)).json();
   if (!job.labels?.length) throw new Error("No labels to print");
 
-  const choice = await askHowMany(job.labels.map((l) => l.id), printer.name);
+  // Which of these labels were printed before (a reprint makes two jackets with one number)
+  const ids = job.labels.map((l) => l.id);
+  let printedBefore: LabelPrintHistory = {};
+  try {
+    const res = await fetch("/api/labels/history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ garmentIds: ids }),
+    });
+    if (res.ok) printedBefore = (await res.json()).history ?? {};
+  } catch {}
+
+  const choice = await askHowMany(ids, printer.name, printedBefore);
   if (!choice) return { printed: 0, printer: printer.name };
-  const from = Math.min(Math.max(1, Math.floor(choice.from)), job.labels.length);
-  const to = Math.min(Math.max(from, Math.floor(choice.to)), job.labels.length);
-  const labels = job.labels.slice(from - 1, to);
+
+  let labels: LabelSpec[];
+  let record = true;
+  let drawJob = job;
+  if ("test" in choice) {
+    // A test label carries no real garment number, so it can never become a duplicate
+    drawJob = await (await fetchOk(`/api/labels/test?dpi=${dpi}`)).json();
+    labels = drawJob.labels;
+    record = false;
+  } else if ("onlyNew" in choice) {
+    labels = job.labels.filter((l) => !printedBefore[l.id]);
+  } else {
+    const from = Math.min(Math.max(1, Math.floor(choice.from)), job.labels.length);
+    const to = Math.min(Math.max(from, Math.floor(choice.to)), job.labels.length);
+    labels = job.labels.slice(from - 1, to);
+  }
+  if (!labels.length) return { printed: 0, printer: printer.name };
 
   const canvas = document.createElement("canvas");
-  canvas.width = job.width;
-  canvas.height = job.height;
+  canvas.width = drawJob.width;
+  canvas.height = drawJob.height;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("Could not draw the labels");
 
@@ -242,14 +277,26 @@ async function printDirect(
   onProgress?.(0, labels.length);
   for (let start = 0; start < labels.length; start += CHUNK) {
     const images: string[] = [];
-    for (const label of labels.slice(start, start + CHUNK)) {
-      images.push(drawLabel(ctx, job, label));
+    const chunk = labels.slice(start, start + CHUNK);
+    for (const label of chunk) {
+      images.push(drawLabel(ctx, drawJob, label));
       if (images.length % 20 === 0) await yieldToBrowser();
     }
     const result = await api.printLabelImages(printer.name, images);
     if (!result?.ok) {
       const sent = printed ? ` (${printed} of ${labels.length} were already sent)` : "";
       throw new Error((result?.message || "The printer did not accept the labels") + sent);
+    }
+    if (record) {
+      // Keep a record of every label number printed; never let this stop the printing
+      try {
+        await fetch("/api/labels/printed", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ garmentIds: chunk.map((l) => l.id), printer: printer.name }),
+        });
+      } catch {}
     }
     printed += images.length;
     onProgress?.(printed, labels.length);

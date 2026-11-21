@@ -14,10 +14,11 @@ import type {
   InsertInvoice,
   InvoiceLine,
   InsertInvoiceLine,
+  LabelPrint,
 } from "@shared/schema";
 import { statusAfterScan } from "@shared/schema";
 import { classifyMissing } from "./missing";
-import type { IStorage, DeleteFactoryResult, BackupData } from "./storage";
+import type { IStorage, DeleteFactoryResult, BackupData, LabelPrintHistory } from "./storage";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -149,7 +150,29 @@ export class MemoryStorage implements IStorage {
       scanBatches: [...this._scanBatches],
       invoices: [...this._invoices],
       invoiceLines: [...this._invoiceLines],
+      labelPrints: [...this._labelPrints],
     };
+  }
+
+  private _labelPrints: LabelPrint[] = [];
+
+  async recordLabelPrints(garmentIds: string[], printer: string | null): Promise<number> {
+    for (const garmentId of garmentIds) {
+      this._labelPrints.push({ id: uuid(), garmentId, printer, printedAt: now() });
+    }
+    return garmentIds.length;
+  }
+
+  async getLabelPrintHistory(garmentIds: string[]): Promise<LabelPrintHistory> {
+    const wanted = new Set(garmentIds);
+    const history: LabelPrintHistory = {};
+    for (const p of this._labelPrints) {
+      if (!wanted.has(p.garmentId)) continue;
+      const h = (history[p.garmentId] ??= { count: 0, lastAt: null });
+      h.count++;
+      if (p.printedAt && (!h.lastAt || p.printedAt > h.lastAt)) h.lastAt = p.printedAt;
+    }
+    return history;
   }
 
   async getGarments(factoryId?: string): Promise<Garment[]> {
@@ -627,6 +650,26 @@ export class MemoryStorage implements IStorage {
   }
 
   // ---- Dashboard -----------------------------------------------------------
+
+  async getLatestScanSince(
+    garmentDbId: string,
+    location: "factory" | "laundry",
+    direction: "IN" | "OUT",
+    since: Date,
+  ) {
+    const ev = this._scanEvents
+      .filter(
+        (e) =>
+          e.garmentId === garmentDbId &&
+          e.location === location &&
+          e.direction === direction &&
+          (e.scannedAt?.getTime() ?? 0) >= since.getTime(),
+      )
+      .sort((a, b) => (b.scannedAt?.getTime() ?? 0) - (a.scannedAt?.getTime() ?? 0))[0];
+    if (!ev) return undefined;
+    const batch = ev.batchId ? this._scanBatches.find((b) => b.id === ev.batchId) : undefined;
+    return { ...ev, batchNumber: batch?.batchNumber ?? null };
+  }
 
   async getScannedGarmentIds(): Promise<string[]> {
     return Array.from(new Set(this._scanEvents.map((e) => e.garmentId)));

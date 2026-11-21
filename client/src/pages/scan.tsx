@@ -129,13 +129,19 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
       }
     },
     onSuccess: (response: any) => {
+      if (response.alreadyScanned) {
+        beepDuplicate();
+        toast({ title: "Scanned earlier today", description: response.message });
+      }
       const newItem: ScannedItem = {
         garmentId: response.garmentId,
         garment: response.garment,
         status: "success",
         message: response.queued
           ? `No connection — saved, will send when back online (${direction} at ${location})`
-          : `Scanned ${direction} at ${location}`,
+          : response.alreadyScanned
+            ? response.message
+            : `Scanned ${direction} at ${location}`,
         timestamp: new Date(),
       };
       setScannedItems((prev) => [newItem, ...prev]);
@@ -147,7 +153,16 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
       }
     },
     onError: (error: any, garmentCode: string) => {
-      const isDup = error.message?.includes("duplicate");
+      // apiRequest errors look like '409: {"message":"…"}'
+      let text: string = error?.message || "Scan failed";
+      const isDup = text.startsWith("409") || text.includes("duplicate");
+      const json = text.indexOf("{");
+      if (json !== -1) {
+        try {
+          text = JSON.parse(text.slice(json)).message || text;
+        } catch {}
+      }
+      error = { message: text };
       if (isDup) {
         beepDuplicate();
       } else {
@@ -162,7 +177,7 @@ export default function ScanPage({ userProfile }: ScanPageProps) {
       setScannedItems((prev) => [newItem, ...prev]);
 
       toast({
-        title: isDup ? "Duplicate Scan" : "Scan Error",
+        title: isDup ? "Already scanned today" : "Scan Error",
         description: error.message,
         variant: isDup ? "default" : "destructive",
       });
