@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { DeleteWithPasswordDialog } from "@/components/delete-with-password";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ArrowDownToLine, ArrowUpFromLine, Ban, Building2, CalendarDays, Shirt, WashingMachine } from "lucide-react";
 import type { Factory } from "@shared/schema";
 
@@ -83,6 +82,7 @@ export function GarmentDaySummary({ isAdmin, factories }: { isAdmin: boolean; fa
   const { toast } = useToast();
   // "Only these are real": block every other label of a colour
   const [blocking, setBlocking] = useState<{ colour: string; keep: number } | null>(null);
+  const [blockBusy, setBlockBusy] = useState(false);
   const [preview, setPreview] = useState<{ keep: number; block: { garmentId: string; garmentType: string; size: string }[] } | null>(null);
   useEffect(() => {
     setPreview(null);
@@ -312,16 +312,15 @@ export function GarmentDaySummary({ isAdmin, factories }: { isAdmin: boolean; fa
         </DialogContent>
       </Dialog>
 
-      <DeleteWithPasswordDialog
-        open={!!blocking}
-        onOpenChange={(o) => !o && setBlocking(null)}
-        tone="destructive"
-        icon={<Ban className="w-5 h-5" />}
-        title={blocking ? `Block other ${blocking.colour} labels` : ""}
-        confirmLabel={preview ? `Block ${preview.block.length} labels` : "Block labels"}
-        busyLabel="Blocking…"
-        description={
-          <>
+      <Dialog open={!!blocking} onOpenChange={(o) => !o && !blockBusy && setBlocking(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Ban className="w-5 h-5" />
+              {blocking ? `Block other ${blocking.colour} labels` : ""}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm text-muted-foreground">
             <p>
               Keep the <strong>{preview?.keep ?? blocking?.keep ?? 0}</strong> {blocking?.colour.toLowerCase()} items
               received at the laundry on {date ? formatDay(date) : ""}.
@@ -348,23 +347,42 @@ export function GarmentDaySummary({ isAdmin, factories }: { isAdmin: boolean; fa
                 </p>
               </>
             )}
-          </>
-        }
-        onConfirm={async (password) => {
-          if (!blocking) return;
-          const result = await apiRequest("POST", "/api/garments/block-others", {
-            password,
-            date,
-            colour: blocking.colour,
-            ...(factory !== "all" ? { factoryId: factory } : {}),
-          });
-          queryClient.invalidateQueries();
-          toast({
-            title: `${result.blocked} ${blocking.colour.toLowerCase()} labels blocked`,
-            description: `Only the ${result.kept} ${blocking.colour.toLowerCase()} items received on ${formatDay(date)} count now.`,
-          });
-        }}
-      />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" disabled={blockBusy} onClick={() => setBlocking(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!preview || preview.block.length === 0 || blockBusy}
+              data-testid="button-confirm-block"
+              onClick={async () => {
+                if (!blocking) return;
+                setBlockBusy(true);
+                try {
+                  const result = await apiRequest("POST", "/api/garments/block-others", {
+                    date,
+                    colour: blocking.colour,
+                    ...(factory !== "all" ? { factoryId: factory } : {}),
+                  });
+                  queryClient.invalidateQueries();
+                  toast({
+                    title: `${result.blocked} ${blocking.colour.toLowerCase()} labels blocked`,
+                    description: `Only the ${result.kept} ${blocking.colour.toLowerCase()} items received on ${formatDay(date)} count now.`,
+                  });
+                  setBlocking(null);
+                } catch {
+                  toast({ title: "Labels not blocked", description: "Please try again.", variant: "destructive" });
+                } finally {
+                  setBlockBusy(false);
+                }
+              }}
+            >
+              {blockBusy ? "Blocking…" : preview ? `Block ${preview.block.length} labels` : "Block labels"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

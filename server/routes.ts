@@ -804,9 +804,10 @@ export async function registerRoutes(
     }
   });
 
+  // No password: blocking deletes nothing and each label can be unblocked
   app.post("/api/garments/block-others", isAuthenticatedOrFactory, deleteLimiter, async (req: any, res) => {
     try {
-      if (!confirmDeletePassword(req, res)) return;
+      if (!req.isAdminSession) return res.status(403).json({ message: "Only the admin can block labels" });
       const parsed = blockOthersSchema.safeParse(req.body ?? {});
       if (!parsed.success) return res.status(400).json({ message: "Choose a day and a colour" });
       const { date, colour, factoryId } = parsed.data;
