@@ -72,6 +72,8 @@ export interface IStorage {
   deleteFactory(id: string): Promise<DeleteFactoryResult | null>;
   /** Delete a batch and its scans; affected garments go back to their previous location */
   deleteBatch(id: string): Promise<{ scans: number; garments: number } | null>;
+  /** Delete every scan on one day (optionally one factory's garments only). Garments are kept. */
+  deleteScanDate(date: string, factoryId?: string): Promise<{ scans: number; garments: number; batches: number }>;
   /** "Found": clears any write-off and restarts the missing countdown */
   markGarmentFound(id: string): Promise<Garment | undefined>;
   writeOffGarment(id: string): Promise<Garment | undefined>;
@@ -290,6 +292,53 @@ export class DatabaseStorage implements IStorage {
         batches: deletedBatches.length,
         invoices: deletedInvoices.length,
       };
+    });
+  }
+
+  async deleteScanDate(date: string, factoryId?: string): Promise<{ scans: number; garments: number; batches: number }> {
+    const dayStart = new Date(date + "T00:00:00");
+    const dayEnd = new Date(date + "T23:59:59.999");
+    return db.transaction(async (tx) => {
+      const inDay = and(sql`${scanEvents.scannedAt} >= ${dayStart}`, sql`${scanEvents.scannedAt} <= ${dayEnd}`);
+      const where = factoryId
+        ? and(inDay, inArray(scanEvents.garmentId, tx.select({ id: garments.id }).from(garments).where(eq(garments.factoryId, factoryId))))
+        : inDay;
+      const removed = await tx
+        .delete(scanEvents)
+        .where(where)
+        .returning({ garmentId: scanEvents.garmentId, batchId: scanEvents.batchId });
+
+      // Batch reports left with no scans go too; others get their count updated
+      let batches = 0;
+      const batchIds = Array.from(new Set(removed.map((r) => r.batchId).filter((b): b is string => !!b)));
+      for (const batchId of batchIds) {
+        const [{ n }] = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(scanEvents)
+          .where(eq(scanEvents.batchId, batchId));
+        if (n === 0) {
+          // Invoices are financial records: keep them, just unlink the batch
+          await tx.update(invoiceLines).set({ batchId: null }).where(eq(invoiceLines.batchId, batchId));
+          await tx.delete(scanBatches).where(eq(scanBatches.id, batchId));
+          batches++;
+        } else {
+          await tx.update(scanBatches).set({ totalItems: n }).where(eq(scanBatches.id, batchId));
+        }
+      }
+
+      // Put each garment back where its latest remaining scan says it is
+      const garmentIds = Array.from(new Set(removed.map((r) => r.garmentId)));
+      for (const garmentId of garmentIds) {
+        const [last] = await tx
+          .select()
+          .from(scanEvents)
+          .where(eq(scanEvents.garmentId, garmentId))
+          .orderBy(desc(scanEvents.scannedAt))
+          .limit(1);
+        const status = last ? statusAfterScan(last.location, last.direction) : "at_factory";
+        await tx.update(garments).set({ status }).where(eq(garments.id, garmentId));
+      }
+      return { scans: removed.length, garments: garmentIds.length, batches };
     });
   }
 

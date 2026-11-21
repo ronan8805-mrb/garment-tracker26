@@ -237,6 +237,38 @@ export class MemoryStorage implements IStorage {
     };
   }
 
+  async deleteScanDate(date: string, factoryId?: string): Promise<{ scans: number; garments: number; batches: number }> {
+    const dayStart = new Date(date + "T00:00:00").getTime();
+    const dayEnd = new Date(date + "T23:59:59.999").getTime();
+    const factoryGarments = factoryId ? new Set(this._garments.filter((g) => g.factoryId === factoryId).map((g) => g.id)) : null;
+    const hit = (e: ScanEvent) => {
+      const t = e.scannedAt?.getTime() ?? NaN;
+      return t >= dayStart && t <= dayEnd && (!factoryGarments || factoryGarments.has(e.garmentId));
+    };
+    const removed = this._scanEvents.filter(hit);
+    this._scanEvents = this._scanEvents.filter((e) => !hit(e));
+    let batches = 0;
+    for (const batchId of Array.from(new Set(removed.map((e) => e.batchId).filter((b): b is string => !!b)))) {
+      const left = this._scanEvents.filter((e) => e.batchId === batchId).length;
+      if (left === 0) {
+        for (const l of this._invoiceLines) if (l.batchId === batchId) l.batchId = null;
+        this._scanBatches = this._scanBatches.filter((b) => b.id !== batchId);
+        batches++;
+      } else {
+        const b = this._scanBatches.find((x) => x.id === batchId);
+        if (b) b.totalItems = left;
+      }
+    }
+    const garmentIds = Array.from(new Set(removed.map((e) => e.garmentId)));
+    for (const gid of garmentIds) {
+      const last = this._scanEvents
+        .filter((e) => e.garmentId === gid)
+        .sort((a, b) => (b.scannedAt?.getTime() ?? 0) - (a.scannedAt?.getTime() ?? 0))[0];
+      await this.updateGarmentStatus(gid, last ? statusAfterScan(last.location, last.direction) : "at_factory");
+    }
+    return { scans: removed.length, garments: garmentIds.length, batches };
+  }
+
   async deleteBatch(id: string): Promise<{ scans: number; garments: number } | null> {
     if (!this._scanBatches.some((b) => b.id === id)) return null;
     const removed = this._scanEvents.filter((e) => e.batchId === id);

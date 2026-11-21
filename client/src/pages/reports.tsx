@@ -110,6 +110,7 @@ export default function ReportsPage() {
   const [viewingDateFactory, setViewingDateFactory] = useState<string | null>(null);
   const [viewingBatchId, setViewingBatchId] = useState<string | null>(null);
   const [deletingBatch, setDeletingBatch] = useState<ScanBatch | null>(null);
+  const [deletingDate, setDeletingDate] = useState<ScanDate | null>(null);
 
   const { isAdminSession, isFactorySession, factorySession } = useAuth();
   const { toast } = useToast();
@@ -397,6 +398,20 @@ export default function ReportsPage() {
                                     <Download className="w-4 h-4 mr-1" />
                                     PDF
                                   </Button>
+                                  {isAdminSession && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      aria-label={`Delete the ${sd.date} report`}
+                                      data-testid={`button-delete-date-${sd.date}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setDeletingDate(sd);
+                                      }}
+                                    >
+                                      <Trash2 className="w-4 h-4 text-destructive" />
+                                    </Button>
+                                  )}
                                 </div>
                               </TableCell>
                             </TableRow>
@@ -922,6 +937,38 @@ export default function ReportsPage() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <DeleteWithPasswordDialog
+        open={!!deletingDate}
+        onOpenChange={(open) => !open && setDeletingDate(null)}
+        title={`Delete the report for ${deletingDate ? formatDate(deletingDate.date) : ""}?`}
+        confirmLabel="Delete this day"
+        description={
+          <>
+            <p>
+              This permanently deletes the {deletingDate?.count ?? 0} scans made on {deletingDate?.date}
+              {isAdminSession && dateFactory !== "all" ? ` for ${selectedDateFactoryName}` : ""}, and any batch
+              reports that only had scans from that day.
+            </p>
+            <p>
+              <span className="font-medium">Garments are not deleted:</span> every label still scans. Garments
+              go back to where their last remaining scan says they are. Invoices are kept.
+            </p>
+            <p className="font-medium text-destructive">This can't be undone (your PC backups still have it).</p>
+          </>
+        }
+        onConfirm={async (password) => {
+          if (!deletingDate) return;
+          const factoryParam = isAdminSession && dateFactory !== "all" ? `?factory=${dateFactory}` : "";
+          const result = await apiRequest("DELETE", `/api/scan-dates/${deletingDate.date}${factoryParam}`, { password });
+          if (viewingDate === deletingDate.date) setViewingDate(null);
+          queryClient.invalidateQueries();
+          toast({
+            title: "Day deleted",
+            description: `Removed ${result.scans} scans and ${result.batches} batch reports. ${result.garments} garments updated; no garments deleted.`,
+          });
+        }}
+      />
 
       <DeleteWithPasswordDialog
         open={!!deletingBatch}
