@@ -68,6 +68,11 @@ export interface IStorage {
   getGarmentByGarmentId(garmentId: string): Promise<Garment | undefined>;
   createGarments(garmentsData: InsertGarment[]): Promise<Garment[]>;
   updateGarmentStatus(id: string, status: "at_factory" | "at_laundry"): Promise<void>;
+  /** Correct type / size / colour for these garments (ids are garments.id); returns how many changed */
+  updateGarmentDetails(
+    ids: string[],
+    details: { garmentType?: string; size?: string; colour?: string | null },
+  ): Promise<number>;
 
   // Missing garments: not seen for `days`, plus written-off garments
   getMissingReport(opts: { factoryId?: string; days: number }): Promise<{
@@ -273,6 +278,19 @@ export class DatabaseStorage implements IStorage {
 
   async updateGarmentStatus(id: string, status: "at_factory" | "at_laundry"): Promise<void> {
     await db.update(garments).set({ status }).where(eq(garments.id, id));
+  }
+
+  async updateGarmentDetails(
+    ids: string[],
+    details: { garmentType?: string; size?: string; colour?: string | null },
+  ): Promise<number> {
+    if (!ids.length) return 0;
+    const updated = await db
+      .update(garments)
+      .set(details)
+      .where(inArray(garments.id, ids))
+      .returning({ id: garments.id });
+    return updated.length;
   }
 
   async getMissingReport({ factoryId, days }: { factoryId?: string; days: number }) {

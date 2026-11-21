@@ -5,6 +5,7 @@ import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import {
   bulkGarmentSchema,
+  garmentDetailsSchema,
   createFactoryWithCredentialsSchema,
   factoryLoginSchema,
   statusAfterScan,
@@ -377,6 +378,35 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error updating factory:", error);
       res.status(500).json({ message: "Failed to update factory" });
+    }
+  });
+
+  // Correct a garment's type, size or colour (e.g. labels made as "Coverall"
+  // that went on jackets). The printed label and its number don't change.
+  app.patch("/api/garments/:id", isAuthenticatedOrFactory, async (req: any, res) => {
+    try {
+      if (!req.isAdminSession) return res.status(403).json({ message: "Only the admin can change garments" });
+      const parsed = garmentDetailsSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid details" });
+      }
+      const { wholeLot, ...details } = parsed.data;
+      const garment = await storage.getGarment(String(req.params.id));
+      if (!garment) return res.status(404).json({ message: "Garment not found" });
+
+      let ids = [garment.id];
+      if (wholeLot) {
+        const lotPrefix = garment.garmentId.replace(/-\d+$/, "-");
+        ids = (await storage.getGarments(garment.factoryId))
+          .filter((g) => g.garmentId.startsWith(lotPrefix))
+          .map((g) => g.id);
+      }
+      const updated = await storage.updateGarmentDetails(ids, details);
+      broadcast("garment_update", { garmentsEdited: updated });
+      res.json({ updated });
+    } catch (error) {
+      console.error("Error updating garment:", error);
+      res.status(500).json({ message: "Failed to update garment" });
     }
   });
 

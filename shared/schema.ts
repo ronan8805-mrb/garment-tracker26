@@ -250,6 +250,20 @@ export const insertInvoiceLineSchema = createInsertSchema(invoiceLines).omit({
 // Garment colours offered when creating garments
 export const GARMENT_COLOURS = ["White", "Red", "Green", "Grey"] as const;
 
+// Correcting a garment's details after its label was made (the label itself,
+// and the number on it, stay the same). wholeLot applies it to every label
+// made in the same go (same number apart from the last 3 digits).
+export const garmentDetailsSchema = z
+  .object({
+    garmentType: z.string().trim().min(1).max(50).optional(),
+    size: z.string().trim().min(1).max(10).optional(),
+    colour: z.enum(GARMENT_COLOURS).nullable().optional(),
+    wholeLot: z.boolean().optional(),
+  })
+  .refine((v) => v.garmentType !== undefined || v.size !== undefined || v.colour !== undefined, {
+    message: "Nothing to change",
+  });
+
 // Bulk garment creation schema
 export const bulkGarmentSchema = z.object({
   factoryId: z.string(),

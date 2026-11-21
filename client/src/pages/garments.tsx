@@ -55,9 +55,11 @@ import {
   X,
   Printer,
   Tag,
+  Pencil,
 } from "lucide-react";
 import { downloadFile, labelUrl } from "@/lib/labels";
 import { usePrintLabels } from "@/hooks/use-print-labels";
+import { EditGarmentDialog } from "@/components/edit-garment-dialog";
 import type { Factory as FactoryType, Garment } from "@shared/schema";
 
 const bulkGarmentSchema = z.object({
@@ -97,6 +99,7 @@ export default function GarmentsPage() {
   const [filterDate, setFilterDate] = useState<string>("");
   const { toast } = useToast();
   const { isAdminSession } = useAuth();
+  const [editing, setEditing] = useState<Garment | null>(null);
   // The lot of garments just created, so its labels can be printed straight away
   const [lastCreated, setLastCreated] = useState<{
     factoryId: string;
@@ -312,6 +315,7 @@ export default function GarmentsPage() {
                     <TableHead>Factory</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead>Status</TableHead>
+                    {isAdminSession && <TableHead className="w-10" />}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -355,6 +359,20 @@ export default function GarmentsPage() {
                         </Badge>
                         )}
                       </TableCell>
+                      {isAdminSession && (
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Change details for ${garment.garmentId}`}
+                            title="Change type, size or colour"
+                            data-testid={`button-edit-garment-${garment.garmentId}`}
+                            onClick={() => setEditing(garment)}
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -388,6 +406,20 @@ export default function GarmentsPage() {
           )}
         </CardContent>
       </Card>
+      <EditGarmentDialog
+        garment={editing}
+        lotSize={
+          editing
+            ? (garments ?? []).filter(
+                (g) => g.factoryId === editing.factoryId && g.garmentId.startsWith(editing.garmentId.replace(/-\d+$/, "-")),
+              ).length
+            : 0
+        }
+        types={GARMENT_TYPES}
+        sizes={SIZES}
+        colours={GARMENT_COLOURS}
+        onClose={() => setEditing(null)}
+      />
     </div>
   );
 }

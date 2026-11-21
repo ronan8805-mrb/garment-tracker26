@@ -368,6 +368,20 @@ export class MemoryStorage implements IStorage {
     if (idx !== -1) this._garments[idx].status = status;
   }
 
+  async updateGarmentDetails(
+    ids: string[],
+    details: { garmentType?: string; size?: string; colour?: string | null },
+  ): Promise<number> {
+    const wanted = new Set(ids);
+    let n = 0;
+    for (const g of this._garments) {
+      if (!wanted.has(g.id)) continue;
+      Object.assign(g, details);
+      n++;
+    }
+    return n;
+  }
+
   // ---- Scan Events ---------------------------------------------------------
 
   async createScanEvent(event: InsertScanEvent): Promise<ScanEvent> {
