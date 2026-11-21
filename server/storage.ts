@@ -72,6 +72,13 @@ export interface IStorage {
   deleteFactory(id: string): Promise<DeleteFactoryResult | null>;
   /** Delete a batch and its scans; affected garments go back to their previous location */
   deleteBatch(id: string): Promise<{ scans: number; garments: number } | null>;
+  /** Correct every scan on one day to one location and direction (for scans made with the wrong setting) */
+  setScanDateDirection(
+    date: string,
+    location: "factory" | "laundry",
+    direction: "IN" | "OUT",
+    factoryId?: string,
+  ): Promise<{ scans: number; changed: number; batches: number; garments: number }>;
   /** Delete every scan on one day (optionally one factory's garments only). Garments are kept. */
   deleteScanDate(date: string, factoryId?: string): Promise<{ scans: number; garments: number; batches: number }>;
   /** "Found": clears any write-off and restarts the missing countdown */
@@ -292,6 +299,56 @@ export class DatabaseStorage implements IStorage {
         batches: deletedBatches.length,
         invoices: deletedInvoices.length,
       };
+    });
+  }
+
+  async setScanDateDirection(
+    date: string,
+    location: "factory" | "laundry",
+    direction: "IN" | "OUT",
+    factoryId?: string,
+  ): Promise<{ scans: number; changed: number; batches: number; garments: number }> {
+    const dayStart = new Date(date + "T00:00:00");
+    const dayEnd = new Date(date + "T23:59:59.999");
+    return db.transaction(async (tx) => {
+      const inDay = and(sql`${scanEvents.scannedAt} >= ${dayStart}`, sql`${scanEvents.scannedAt} <= ${dayEnd}`);
+      const where = factoryId
+        ? and(inDay, inArray(scanEvents.garmentId, tx.select({ id: garments.id }).from(garments).where(eq(garments.factoryId, factoryId))))
+        : inDay;
+      const events = await tx.select().from(scanEvents).where(where);
+      const wrong = events.filter((e) => e.location !== location || e.direction !== direction);
+      if (wrong.length) {
+        await tx
+          .update(scanEvents)
+          .set({ location, direction })
+          .where(inArray(scanEvents.id, wrong.map((e) => e.id)));
+      }
+
+      // Batch reports that held those scans get the same setting
+      const batchIds = Array.from(new Set(events.map((e) => e.batchId).filter((b): b is string => !!b)));
+      let batches = 0;
+      for (const batchId of batchIds) {
+        const updated = await tx
+          .update(scanBatches)
+          .set({ location, direction })
+          .where(and(eq(scanBatches.id, batchId), sql`(${scanBatches.location} <> ${location} OR ${scanBatches.direction} <> ${direction})`))
+          .returning({ id: scanBatches.id });
+        batches += updated.length;
+      }
+
+      // Each garment goes where its latest scan now says it is
+      const garmentIds = Array.from(new Set(wrong.map((e) => e.garmentId)));
+      for (const garmentId of garmentIds) {
+        const [last] = await tx
+          .select()
+          .from(scanEvents)
+          .where(eq(scanEvents.garmentId, garmentId))
+          .orderBy(desc(scanEvents.scannedAt))
+          .limit(1);
+        const status = last ? statusAfterScan(last.location, last.direction) : "at_factory";
+        await tx.update(garments).set({ status }).where(eq(garments.id, garmentId));
+      }
+      return { scans: events.length, changed: wrong.length, batches, garments: garmentIds.length };
     });
   }
 

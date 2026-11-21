@@ -52,6 +52,7 @@ import {
   Trash2,
   DatabaseBackup,
   Shirt,
+  ArrowLeftRight,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -113,6 +114,8 @@ export default function ReportsPage() {
   const [viewingBatchId, setViewingBatchId] = useState<string | null>(null);
   const [deletingBatch, setDeletingBatch] = useState<ScanBatch | null>(null);
   const [deletingDate, setDeletingDate] = useState<ScanDate | null>(null);
+  const [fixingDate, setFixingDate] = useState<ScanDate | null>(null);
+  const [fixDirection, setFixDirection] = useState<"IN" | "OUT">("OUT");
 
   const { isAdminSession, isFactorySession, factorySession } = useAuth();
   const { toast } = useToast();
@@ -409,6 +412,22 @@ export default function ReportsPage() {
                                     <Download className="w-4 h-4 mr-1" />
                                     PDF
                                   </Button>
+                                  {isAdminSession && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      aria-label={`Change IN/OUT for every scan on ${sd.date}`}
+                                      data-testid={`button-fix-direction-${sd.date}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setFixDirection("OUT");
+                                        setFixingDate(sd);
+                                      }}
+                                    >
+                                      <ArrowLeftRight className="w-4 h-4 mr-1" />
+                                      IN/OUT
+                                    </Button>
+                                  )}
                                   {isAdminSession && (
                                     <Button
                                       variant="ghost"
@@ -977,6 +996,66 @@ export default function ReportsPage() {
           toast({
             title: "Day deleted",
             description: `Removed ${result.scans} scans and ${result.batches} batch reports. ${result.garments} garments updated; no garments deleted.`,
+          });
+        }}
+      />
+
+      <DeleteWithPasswordDialog
+        open={!!fixingDate}
+        onOpenChange={(open) => !open && setFixingDate(null)}
+        tone="default"
+        icon={<ArrowLeftRight className="w-5 h-5" />}
+        title={`Change IN/OUT for ${fixingDate ? formatDate(fixingDate.date) : ""}`}
+        confirmLabel={fixDirection === "OUT" ? "Make them all OUT" : "Make them all IN"}
+        busyLabel="Saving…"
+        description={
+          <>
+            <p>
+              Use this if the wrong direction was picked while scanning. Every one of the {fixingDate?.count ?? 0}{" "}
+              scans on {fixingDate?.date}
+              {isAdminSession && dateFactory !== "all" ? ` for ${selectedDateFactoryName}` : ""} will be recorded as:
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant={fixDirection === "OUT" ? "default" : "outline"}
+                data-testid="button-fix-out"
+                onClick={() => setFixDirection("OUT")}
+              >
+                <ArrowUpFromLine className="w-4 h-4 mr-1" />
+                Sent OUT (to factory)
+              </Button>
+              <Button
+                type="button"
+                variant={fixDirection === "IN" ? "default" : "outline"}
+                data-testid="button-fix-in"
+                onClick={() => setFixDirection("IN")}
+              >
+                <ArrowDownToLine className="w-4 h-4 mr-1" />
+                Received IN (at laundry)
+              </Button>
+            </div>
+            <p>
+              Batch reports from that day change to match, and each garment's status is updated. Nothing is
+              deleted.
+            </p>
+          </>
+        }
+        onConfirm={async (password) => {
+          if (!fixingDate) return;
+          const factoryParam = isAdminSession && dateFactory !== "all" ? `?factory=${dateFactory}` : "";
+          const result = await apiRequest("POST", `/api/scan-dates/${fixingDate.date}/set-direction${factoryParam}`, {
+            password,
+            location: "laundry",
+            direction: fixDirection,
+          });
+          queryClient.invalidateQueries();
+          toast({
+            title: "Scans corrected",
+            description:
+              result.changed === 0
+                ? `All ${result.scans} scans were already ${fixDirection}. Nothing needed changing.`
+                : `${result.changed} of ${result.scans} scans changed to ${fixDirection}; ${result.batches} batch reports and ${result.garments} garments updated.`,
           });
         }}
       />

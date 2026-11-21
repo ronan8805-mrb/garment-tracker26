@@ -771,6 +771,31 @@ export async function registerRoutes(
     }
   });
 
+  // Correct one day's scans made with the wrong IN/OUT setting (admin password)
+  app.post("/api/scan-dates/:date/set-direction", isAuthenticatedOrFactory, deleteLimiter, async (req: any, res) => {
+    try {
+      if (!confirmDeletePassword(req, res)) return;
+      const date = String(req.params.date);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ message: "Invalid date format. Use YYYY-MM-DD" });
+      }
+      const { location, direction } = req.body ?? {};
+      if (!["laundry", "factory"].includes(location) || !["IN", "OUT"].includes(direction)) {
+        return res.status(400).json({ message: "Choose where and which way the garments went" });
+      }
+      const factoryId =
+        typeof req.query.factory === "string" && req.query.factory && req.query.factory !== "all"
+          ? req.query.factory
+          : undefined;
+      const result = await storage.setScanDateDirection(date, location, direction, factoryId);
+      broadcast("garment_update", { scanDateCorrected: date });
+      res.json({ success: true, ...result });
+    } catch (error) {
+      console.error("Error correcting scan date:", error);
+      res.status(500).json({ message: "Failed to correct that day's scans" });
+    }
+  });
+
   // Delete one day's scans (a daily report). Garments and their labels are kept.
   app.delete("/api/scan-dates/:date", isAuthenticatedOrFactory, deleteLimiter, async (req: any, res) => {
     try {

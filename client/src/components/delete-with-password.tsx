@@ -18,6 +18,12 @@ interface Props {
   title: string;
   description: ReactNode;
   confirmLabel?: string;
+  /** Shown on the button while it works (default "Deleting…") */
+  busyLabel?: string;
+  /** Title icon (default a bin) */
+  icon?: ReactNode;
+  /** "default" for changes that aren't deletes */
+  tone?: "destructive" | "default";
   /** Called with the typed password; throw an Error to show its message */
   onConfirm: (password: string) => Promise<void>;
 }
@@ -29,6 +35,9 @@ export function DeleteWithPasswordDialog({
   title,
   description,
   confirmLabel = "Delete",
+  busyLabel = "Deleting…",
+  icon,
+  tone = "destructive",
   onConfirm,
 }: Props) {
   const [password, setPassword] = useState("");
@@ -68,8 +77,8 @@ export function DeleteWithPasswordDialog({
     <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-destructive">
-            <Trash2 className="w-5 h-5" />
+          <DialogTitle className={`flex items-center gap-2 ${tone === "destructive" ? "text-destructive" : ""}`}>
+            {icon ?? <Trash2 className="w-5 h-5" />}
             {title}
           </DialogTitle>
           <DialogDescription asChild>
@@ -97,8 +106,8 @@ export function DeleteWithPasswordDialog({
             <Button type="button" variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" variant="destructive" disabled={!password || busy}>
-              {busy ? "Deleting…" : confirmLabel}
+            <Button type="submit" variant={tone} disabled={!password || busy}>
+              {busy ? busyLabel : confirmLabel}
             </Button>
           </DialogFooter>
         </form>

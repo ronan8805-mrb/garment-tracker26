@@ -237,6 +237,43 @@ export class MemoryStorage implements IStorage {
     };
   }
 
+  async setScanDateDirection(
+    date: string,
+    location: "factory" | "laundry",
+    direction: "IN" | "OUT",
+    factoryId?: string,
+  ): Promise<{ scans: number; changed: number; batches: number; garments: number }> {
+    const dayStart = new Date(date + "T00:00:00").getTime();
+    const dayEnd = new Date(date + "T23:59:59.999").getTime();
+    const factoryGarments = factoryId ? new Set(this._garments.filter((g) => g.factoryId === factoryId).map((g) => g.id)) : null;
+    const events = this._scanEvents.filter((e) => {
+      const t = e.scannedAt?.getTime() ?? NaN;
+      return t >= dayStart && t <= dayEnd && (!factoryGarments || factoryGarments.has(e.garmentId));
+    });
+    const wrong = events.filter((e) => e.location !== location || e.direction !== direction);
+    for (const e of wrong) {
+      e.location = location;
+      e.direction = direction;
+    }
+    let batches = 0;
+    for (const batchId of Array.from(new Set(events.map((e) => e.batchId).filter((b): b is string => !!b)))) {
+      const b = this._scanBatches.find((x) => x.id === batchId);
+      if (b && (b.location !== location || b.direction !== direction)) {
+        b.location = location;
+        b.direction = direction;
+        batches++;
+      }
+    }
+    const garmentIds = Array.from(new Set(wrong.map((e) => e.garmentId)));
+    for (const gid of garmentIds) {
+      const last = this._scanEvents
+        .filter((e) => e.garmentId === gid)
+        .sort((a, b) => (b.scannedAt?.getTime() ?? 0) - (a.scannedAt?.getTime() ?? 0))[0];
+      await this.updateGarmentStatus(gid, last ? statusAfterScan(last.location, last.direction) : "at_factory");
+    }
+    return { scans: events.length, changed: wrong.length, batches, garments: garmentIds.length };
+  }
+
   async deleteScanDate(date: string, factoryId?: string): Promise<{ scans: number; garments: number; batches: number }> {
     const dayStart = new Date(date + "T00:00:00").getTime();
     const dayEnd = new Date(date + "T23:59:59.999").getTime();
