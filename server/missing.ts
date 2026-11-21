@@ -1,5 +1,7 @@
 // Missing-garment rules, shared by the Postgres and in-memory storage.
 //
+// Only garments that have been scanned at least once can be missing: labels
+// that were made but never scanned are waiting to go into use.
 // A garment is "last seen" at the latest of: its last scan, when its label was
 // created, and when someone pressed "Found". It is missing once that is more
 // than `days` ago. A written-off garment stays written off until it is scanned
@@ -69,6 +71,9 @@ export function classifyMissing(rows: GarmentWithLastScan[], days: number, now =
     const m = toMissingGarment(row, now);
     if (m.writtenOffAt) {
       writtenOff.push(m);
+    } else if (!row.lastScanAt) {
+      // A label that has never been scanned isn't in use yet, so it can't be missing
+      continue;
     } else if (!m.lastSeenAt || m.lastSeenAt.getTime() < cutoff) {
       missing.push(m);
     }

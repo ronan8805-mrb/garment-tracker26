@@ -31,12 +31,14 @@ interface FactoryBreakdown {
   total: number;
   atFactory: number;
   atLaundry: number;
+  notScanned?: number;
 }
 
 interface DashboardStats {
   totalFactories: number;
   activeFactories: number;
   totalGarments: number;
+  labelsNotScanned?: number;
   atFactory: number;
   atLaundry: number;
   todayScans: number;
@@ -81,9 +83,13 @@ export default function AdminDashboard() {
           trend="neutral"
         />
         <StatCard
-          title="Total Garments"
+          title="Garments in Use"
           value={stats?.totalGarments || 0}
-          subtitle="Tracked in system"
+          subtitle={
+            stats?.labelsNotScanned
+              ? `Scanned at least once · ${stats.labelsNotScanned.toLocaleString()} more labels not scanned yet`
+              : "Scanned at least once"
+          }
           icon={Shirt}
           trend="up"
         />
@@ -124,7 +130,7 @@ export default function AdminDashboard() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Factory</TableHead>
-                    <TableHead className="text-center">Total</TableHead>
+                    <TableHead className="text-center">In Use</TableHead>
                     <TableHead className="text-center">At Factory</TableHead>
                     <TableHead className="text-center">At Laundry</TableHead>
                     <TableHead className="hidden sm:table-cell">Status</TableHead>
@@ -148,6 +154,11 @@ export default function AdminDashboard() {
                         </TableCell>
                         <TableCell className="text-center">
                           <span className="font-semibold text-lg">{fb.total}</span>
+                          {!!fb.notScanned && (
+                            <p className="text-xs text-muted-foreground whitespace-nowrap">
+                              +{fb.notScanned} not scanned yet
+                            </p>
+                          )}
                         </TableCell>
                         <TableCell className="text-center">
                           <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20">

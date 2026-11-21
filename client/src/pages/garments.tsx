@@ -126,7 +126,7 @@ export default function GarmentsPage() {
     queryKey: ["/api/factories"],
   });
 
-  const { data: garments, isLoading } = useQuery<Garment[]>({
+  const { data: garments, isLoading } = useQuery<(Garment & { scanned?: boolean })[]>({
     queryKey: ["/api/garments"],
   });
 
@@ -161,7 +161,10 @@ export default function GarmentsPage() {
     const matchesSearch = g.garmentId.toLowerCase().includes(searchQuery.toLowerCase()) ||
       g.garmentType.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFactory = filterFactory === "all" || g.factoryId === filterFactory;
-    const matchesStatus = filterStatus === "all" || g.status === filterStatus;
+    const notScanned = g.scanned === false;
+    const matchesStatus =
+      filterStatus === "all" ||
+      (filterStatus === "not_scanned" ? notScanned : !notScanned && g.status === filterStatus);
     const matchesDate = !filterDate || (g.createdAt &&
       new Date(g.createdAt).toLocaleDateString("en-CA") === filterDate);
     return matchesSearch && matchesFactory && matchesStatus && matchesDate;
@@ -268,6 +271,7 @@ export default function GarmentsPage() {
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="at_factory">At Factory</SelectItem>
                 <SelectItem value="at_laundry">At Laundry</SelectItem>
+                <SelectItem value="not_scanned">Not scanned yet</SelectItem>
               </SelectContent>
             </Select>
             <div className="relative">
@@ -335,6 +339,11 @@ export default function GarmentsPage() {
                           : "-"}
                       </TableCell>
                       <TableCell>
+                        {garment.scanned === false ? (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            Not scanned yet
+                          </Badge>
+                        ) : (
                         <Badge
                           variant={garment.status === "at_factory" ? "default" : "secondary"}
                           className={garment.status === "at_factory" 
@@ -344,6 +353,7 @@ export default function GarmentsPage() {
                         >
                           {garment.status === "at_factory" ? "At Factory" : "At Laundry"}
                         </Badge>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

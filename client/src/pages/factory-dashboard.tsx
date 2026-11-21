@@ -19,6 +19,7 @@ import { MissingBanner } from "@/components/missing-banner";
 interface FactoryDashboardStats {
   factoryName: string;
   totalGarments: number;
+  labelsNotScanned?: number;
   atFactory: number;
   atLaundry: number;
   recentBatches: ScanBatch[];
@@ -73,8 +74,11 @@ export default function FactoryDashboard() {
               </div>
             </div>
             <p className="text-3xl font-bold">{stats?.totalGarments || 0}</p>
-            <p className="text-sm font-medium text-muted-foreground">Total Garments</p>
-            <p className="text-xs text-muted-foreground">Assigned to your factory</p>
+            <p className="text-sm font-medium text-muted-foreground">Garments in Use</p>
+            <p className="text-xs text-muted-foreground">
+              Scanned at least once
+              {stats?.labelsNotScanned ? ` · ${stats.labelsNotScanned.toLocaleString()} more labels not scanned yet` : ""}
+            </p>
           </CardContent>
         </Card>
 

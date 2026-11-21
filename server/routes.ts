@@ -392,7 +392,8 @@ export async function registerRoutes(
       }
       
       const garments = await storage.getGarments(factoryId);
-      res.json(garments);
+      const scannedIds = new Set(await storage.getScannedGarmentIds());
+      res.json(garments.map((g) => ({ ...g, scanned: scannedIds.has(g.id) })));
     } catch (error) {
       console.error("Error fetching garments:", error);
       res.status(500).json({ message: "Failed to fetch garments" });

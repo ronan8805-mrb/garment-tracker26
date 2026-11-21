@@ -122,10 +122,15 @@ export interface IStorage {
   deleteInvoice(id: string): Promise<void>;
 
   // Dashboard stats
+  /** ids (garments.id) of every garment that has been scanned at least once */
+  getScannedGarmentIds(): Promise<string[]>;
+  // Counts only include garments that have been scanned at least once;
+  // labels made but never scanned are kept and counted separately.
   getAdminDashboardStats(): Promise<{
     totalFactories: number;
     activeFactories: number;
     totalGarments: number;
+    labelsNotScanned: number;
     atFactory: number;
     atLaundry: number;
     todayScans: number;
@@ -138,11 +143,13 @@ export interface IStorage {
       total: number;
       atFactory: number;
       atLaundry: number;
+      notScanned: number;
     }[];
   }>;
   getFactoryDashboardStats(factoryId: string): Promise<{
     factoryName: string;
     totalGarments: number;
+    labelsNotScanned: number;
     atFactory: number;
     atLaundry: number;
     recentBatches: ScanBatch[];
@@ -698,6 +705,11 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  async getScannedGarmentIds(): Promise<string[]> {
+    const rows = await db.selectDistinct({ id: scanEvents.garmentId }).from(scanEvents);
+    return rows.map((r) => r.id);
+  }
+
   // Dashboard stats
   async getAdminDashboardStats() {
     const [factoryStats] = await db
@@ -707,11 +719,13 @@ export class DatabaseStorage implements IStorage {
       })
       .from(factories);
 
+    const scanned = sql`exists (select 1 from ${scanEvents} where ${scanEvents.garmentId} = ${garments.id})`;
     const [garmentStats] = await db
       .select({
-        total: sql<number>`count(*)::int`,
-        atFactory: sql<number>`count(*) filter (where ${garments.status} = 'at_factory')::int`,
-        atLaundry: sql<number>`count(*) filter (where ${garments.status} = 'at_laundry')::int`,
+        total: sql<number>`count(*) filter (where ${scanned})::int`,
+        atFactory: sql<number>`count(*) filter (where ${garments.status} = 'at_factory' and ${scanned})::int`,
+        atLaundry: sql<number>`count(*) filter (where ${garments.status} = 'at_laundry' and ${scanned})::int`,
+        notScanned: sql<number>`count(*) filter (where not ${scanned})::int`,
       })
       .from(garments);
 
@@ -730,9 +744,10 @@ export class DatabaseStorage implements IStorage {
         id: factories.id,
         name: factories.name,
         code: factories.code,
-        total: sql<number>`count(${garments.id})::int`,
-        atFactory: sql<number>`count(${garments.id}) filter (where ${garments.status} = 'at_factory')::int`,
-        atLaundry: sql<number>`count(${garments.id}) filter (where ${garments.status} = 'at_laundry')::int`,
+        total: sql<number>`count(${garments.id}) filter (where ${scanned})::int`,
+        atFactory: sql<number>`count(${garments.id}) filter (where ${garments.status} = 'at_factory' and ${scanned})::int`,
+        atLaundry: sql<number>`count(${garments.id}) filter (where ${garments.status} = 'at_laundry' and ${scanned})::int`,
+        notScanned: sql<number>`count(${garments.id}) filter (where not ${scanned})::int`,
       })
       .from(factories)
       .leftJoin(garments, eq(garments.factoryId, factories.id))
@@ -743,6 +758,7 @@ export class DatabaseStorage implements IStorage {
       totalFactories: factoryStats.total,
       activeFactories: factoryStats.active,
       totalGarments: garmentStats.total,
+      labelsNotScanned: garmentStats.notScanned,
       atFactory: garmentStats.atFactory,
       atLaundry: garmentStats.atLaundry,
       todayScans: todayScansResult?.count || 0,
@@ -755,11 +771,13 @@ export class DatabaseStorage implements IStorage {
   async getFactoryDashboardStats(factoryId: string) {
     const factory = await this.getFactory(factoryId);
 
+    const scanned = sql`exists (select 1 from ${scanEvents} where ${scanEvents.garmentId} = ${garments.id})`;
     const [garmentStats] = await db
       .select({
-        total: sql<number>`count(*)::int`,
-        atFactory: sql<number>`count(*) filter (where ${garments.status} = 'at_factory')::int`,
-        atLaundry: sql<number>`count(*) filter (where ${garments.status} = 'at_laundry')::int`,
+        total: sql<number>`count(*) filter (where ${scanned})::int`,
+        atFactory: sql<number>`count(*) filter (where ${garments.status} = 'at_factory' and ${scanned})::int`,
+        atLaundry: sql<number>`count(*) filter (where ${garments.status} = 'at_laundry' and ${scanned})::int`,
+        notScanned: sql<number>`count(*) filter (where not ${scanned})::int`,
       })
       .from(garments)
       .where(eq(garments.factoryId, factoryId));
@@ -774,6 +792,7 @@ export class DatabaseStorage implements IStorage {
     return {
       factoryName: factory?.name || "Unknown Factory",
       totalGarments: garmentStats.total,
+      labelsNotScanned: garmentStats.notScanned,
       atFactory: garmentStats.atFactory,
       atLaundry: garmentStats.atLaundry,
       recentBatches,
